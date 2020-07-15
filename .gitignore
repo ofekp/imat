@@ -1,6 +1,7 @@
 # other repos
 bounding-box
 old_versions
+torchvision_lib
 
 # Jupyter Notebook
 .ipynb_checkpoints
