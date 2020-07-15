@@ -1,0 +1,15 @@
+# other repos
+bounding-box
+old_versions
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# pycharm
+.DS_Store
+.idea
+
+__pycache__/
+__pypackages__/
+
+*.log
