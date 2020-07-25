@@ -2,6 +2,7 @@
 bounding-box
 old_versions
 torchvision_lib
+Model
 
 # Jupyter Notebook
 .ipynb_checkpoints

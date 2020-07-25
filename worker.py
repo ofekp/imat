@@ -72,7 +72,7 @@ def get_masks(image_df, max_dim=None, dtype=int):
     return torch.as_tensor(masks, dtype=torch.uint8)
 
 
-def get_bounding_boxes(masks):
+def get_bounding_boxes(image_df, masks):
     bounding_boxes = []
     for curr_mask in masks:
         x_left = 0.0
@@ -91,10 +91,9 @@ def get_bounding_boxes(masks):
             x_right = torch.max(cols_sum_non_zero)
         
             # order is important as it is the input order the bb package is expecting
-            assert x_left >= 0
-            assert x_left < x_right
-            assert y_top >= 0
-            assert y_bottom > y_top
+            if not (x_left >= 0 and x_left < x_right and y_top >= 0 and y_bottom > y_top):
+                image_id = image_df['ImageId'].iloc[0]
+                print("ERROR: Image [{}] x_left [{}] y_top [{}] x_right [{}] y_bottom [{}]".format(image_id, str(x_left), str(y_top), str(x_right), str(y_bottom)))
         bounding_boxes.append((x_left, y_top, x_right, y_bottom))
         
     return torch.as_tensor(bounding_boxes, dtype=torch.float32)

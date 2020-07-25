@@ -9,7 +9,7 @@ from coco_utils import get_coco_api_from_dataset
 from coco_eval import CocoEvaluator
 import utils
 
-def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq):
+def train_one_epoch(model, optimizer, data_loader, device, epoch, gradient_accumulation_steps, print_freq):
     model.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
@@ -22,13 +22,16 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq):
 
         lr_scheduler = utils.warmup_lr_scheduler(optimizer, warmup_iters, warmup_factor)
 
+    optimizer.zero_grad()  # gradient_accumulation
+    steps = 0  # gradient_accumulation
     for images, targets in metric_logger.log_every(data_loader, print_freq, header):
+        steps += 1  # gradient_accumulation
         images = list(image.to(device) for image in images)
         targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
 
         loss_dict = model(images, targets)
 
-        losses = sum(loss for loss in loss_dict.values())
+        losses = sum(loss / gradient_accumulation_steps for loss in loss_dict.values())  # gradient_accumulation
 
         # reduce losses over all GPUs for logging purposes
         loss_dict_reduced = utils.reduce_dict(loss_dict)
@@ -41,9 +44,13 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, print_freq):
             print(loss_dict_reduced)
             sys.exit(1)
 
-        optimizer.zero_grad()
+        #optimizer.zero_grad()
         losses.backward()
-        optimizer.step()
+        
+        # gradient_accumulation
+        if steps % gradient_accumulation_steps == 0:
+            optimizer.step()
+            optimizer.zero_grad()
 
         if lr_scheduler is not None:
             lr_scheduler.step()
