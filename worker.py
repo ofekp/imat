@@ -13,17 +13,32 @@ import torch
 #     finally:
 #         lock.release()
 
-
 # INTER_CUBIC
-def rescale(matrix, max_dim, interpolation=cv2.INTER_NEAREST):
+def rescale(matrix, target_dim, pad_color=0, interpolation=cv2.INTER_NEAREST):
     width = matrix.shape[1]
     height = matrix.shape[0]
-    if max_dim == None or (width <= max_dim and height <= max_dim):
+    aspect_ratio = width / height
+    if target_dim == None or (width == target_dim and height == target_dim):
         return matrix
-    larger_dim = max(height, width)
-    new_height = int(height * (max_dim / larger_dim))
-    new_width = int(width * (max_dim / larger_dim))
-    matrix = cv2.resize(matrix, dsize=(new_width, new_height), interpolation=interpolation)    
+
+    if width >= height:  # aspect_ratio >= 1
+        new_width = target_dim
+        new_height = new_height // aspect_ratio
+        pad_left = pad_right = 0
+        pad_top = pad_bottom = (target_dim - new_height) // 2
+        if (pad_top * 2 + new_height) < target_dim:
+            pad_top += 1
+        assert (pad_top + pad_bottom + new_height) == target_dim
+    else:  # aspect_ratio < 1
+        new_height = target_dim
+        new_width = int(new_height * aspect_ratio)
+        pad_left = pad_right = (target_dim - new_width) // 2
+        pad_top = pad_bottom = 0
+        if (pad_left * 2 + new_width) < target_dim:
+            pad_left += 1
+        assert (pad_left + pad_right + new_width) == target_dim
+    matrix = cv2.resize(matrix, dsize=(new_width, new_height), interpolation=interpolation)
+    matrix = cv2.copyMakeBorder(matrix, pad_top, pad_bottom, pad_left, pad_right, borderType=cv2.BORDER_CONSTANT, value=pad_color)
     return matrix
 
 
@@ -31,7 +46,7 @@ def get_labels(image_df):
     return torch.as_tensor(list(image_df['ClassId']), dtype=torch.int64)
 
 
-def get_masks(image_df, max_dim=None, dtype=int):
+def get_masks(image_df, target_dim=None, dtype=int):
     '''
     given: the image df from the train_df or test_df
     return: binary masks as a list (user can choose bool or int as dtype for the output)
@@ -58,7 +73,7 @@ def get_masks(image_df, max_dim=None, dtype=int):
             mask[pixel_start:pixel_start + run_length] = 1
 
         mask = mask.reshape((height, width), order='F')
-        mask = rescale(mask, max_dim)
+        mask = rescale(mask, target_dim)
         masks.append(np.array(mask, dtype=dtype))
 
     # there is a chance that the mask will be all zeros after the rescale
@@ -68,7 +83,7 @@ def get_masks(image_df, max_dim=None, dtype=int):
             count_bad += 1
     if count_bad > 0:
         image_id = image_df['ImageId'].iloc[0]
-        print('ERROR: Image [{}] contains [{}] segments that were erased due to rescaling with max_dim [{}]'.format(image_id, count_bad, max_dim))
+        print('ERROR: Image [{}] contains [{}] segments that were erased due to rescaling with target_dim [{}]'.format(image_id, count_bad, target_dim))
     return torch.as_tensor(masks, dtype=torch.uint8)
 
 
