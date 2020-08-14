@@ -23,7 +23,7 @@ def rescale(matrix, target_dim, pad_color=0, interpolation=cv2.INTER_NEAREST):
 
     if width >= height:  # aspect_ratio >= 1
         new_width = target_dim
-        new_height = new_height // aspect_ratio
+        new_height = int(new_width // aspect_ratio)
         pad_left = pad_right = 0
         pad_top = pad_bottom = (target_dim - new_height) // 2
         if (pad_top * 2 + new_height) < target_dim:
@@ -37,6 +37,7 @@ def rescale(matrix, target_dim, pad_color=0, interpolation=cv2.INTER_NEAREST):
         if (pad_left * 2 + new_width) < target_dim:
             pad_left += 1
         assert (pad_left + pad_right + new_width) == target_dim
+    
     matrix = cv2.resize(matrix, dsize=(new_width, new_height), interpolation=interpolation)
     matrix = cv2.copyMakeBorder(matrix, pad_top, pad_bottom, pad_left, pad_right, borderType=cv2.BORDER_CONSTANT, value=pad_color)
     return matrix

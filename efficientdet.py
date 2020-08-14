@@ -176,7 +176,6 @@ class FpnCombine(nn.Module):
             self.edge_weights = None
 
     def forward(self, x):
-        print("HERE 04")
         dtype = x[0].dtype
         nodes = []
         for offset in self.inputs_offsets:
@@ -188,11 +187,8 @@ class FpnCombine(nn.Module):
             normalized_weights = torch.softmax(self.edge_weights.type(dtype), dim=0)
             x = torch.stack(nodes, dim=-1) * normalized_weights
         elif self.weight_method == 'fastattn':
-            print("HERE 05")
             edge_weights = nn.functional.relu(self.edge_weights.type(dtype))
             weights_sum = torch.sum(edge_weights)
-            for node in nodes:
-                print(node.shape)
             x = torch.stack(
                 [(nodes[i] * edge_weights[i]) / (weights_sum + 0.0001) for i in range(len(nodes))], dim=-1)
         elif self.weight_method == 'sum':
@@ -249,13 +245,8 @@ class BiFpnLayer(nn.Module):
         self.feature_info = self.feature_info[-num_levels::]
 
     def forward(self, x):
-        print("HERE 03")
-        print(len(x))  # 5
-        for xx in x:
-            print(xx.shape)
+        # len(x) = 5
         x = self.fnode(x)
-        for xx in x:
-            print(xx.shape)
         return x[-self.num_levels::]
 
 
@@ -313,25 +304,19 @@ class BiFpn(nn.Module):
             feature_info = fpn_layer.feature_info
 
     def forward(self, x):
-        print("HERE 02")
-        print(len(self.resample))  # 2
-        print(self.config.num_levels)  # max_level-min_level+1=7-3+1=5
-        print(len(x))
-        for xx in x:
-            print(xx.shape)
+        # len(self.resample) = 2
+        # self.config.num_levels = max_level-min_level+1=7-3+1=5
         assert len(self.resample) == self.config.num_levels - len(x)
         x = self.resample(x)
-        print(len(x))
-        for xx in x:
-            print(xx.shape)
         x = self.cell(x)
-        x = OrderedDict([(k, v) for k, v in enumerate(x)])  # ofekp
+        x = OrderedDict([(k, v) for k, v in enumerate(x)])  # ofekp - efficient det expects an OrderedDict
         return x
 
 
 class HeadNet(nn.Module):
     def __init__(self, config, num_outputs, norm_layer=nn.BatchNorm2d, norm_kwargs=None, act_layer=_ACT_LAYER):
         super(HeadNet, self).__init__()
+        print(num_outputs)
         norm_kwargs = norm_kwargs or {}
         self.config = config
         num_anchors = len(config.aspect_ratios) * config.num_scales
@@ -375,6 +360,9 @@ class HeadNet(nn.Module):
                     x_level = drop_path(x_level, self.config.fpn_drop_path_rate, self.training)
                     x_level += x_level_ident
             outputs.append(self.predict(x_level))
+        # ofekp - convert the output to tensor
+        for x in outputs:
+            print(x.shape)
         return outputs
 
 
