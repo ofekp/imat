@@ -77,17 +77,18 @@ class DetBenchPredict(nn.Module):
 
 
 # ofekp - adding this method from https://github.com/rwightman/efficientdet-pytorch/blob/0b36cc1cccfe92febc64f6eb569ca4393bd73964/data/loader.py#L86
-def fast_collate(batch):
+import numpy as np 
+def my_fast_collate(targets):
     MAX_NUM_INSTANCES = 30
-    batch_size = len(batch)
+    batch_size = len(targets)
 
     # FIXME this needs to be more robust
     target = dict()
-    for k, v in batch[0][1].items():
+    for k, v in targets[0].items():
         if torch.is_tensor(v):
             target_shape = (batch_size, MAX_NUM_INSTANCES)
             if len(v.shape) > 1:
-                target_shape = (batch_size, MAX_NUM_INSTANCES) + v.shape[1:]                
+                target_shape = (batch_size, MAX_NUM_INSTANCES) + v.shape[1:]
             target_dtype = v.dtype
         elif isinstance(v, np.ndarray):
             # if a numpy array, assume it relates to object instances, pad to MAX_NUM_INSTANCES
@@ -101,24 +102,31 @@ def fast_collate(batch):
             target_dtype = torch.float32 if isinstance(v[0], float) else torch.int32
         else:
             # scalar, assume per batch
-            target_shape = batch_size,
+            target_shape = batch_size
             target_dtype = torch.float32 if isinstance(v, float) else torch.int64
         target[k] = torch.zeros(target_shape, dtype=target_dtype)
-        print(target[k].shape)
 
-    tensor = torch.zeros((batch_size, *batch[0][0].shape), dtype=torch.uint8)
     for i in range(batch_size):
-#         tensor[i] += torch.from_numpy((batch[i][0] * 255).astype('uint8'))
-        tensor[i] += torch.tensor(batch[i][0] * 255, dtype=torch.uint8)
-        for tk, tv in batch[i][1].items():
+        for tk, tv in targets[i].items():
             if torch.is_tensor(tv):
                 target[tk][i, 0:tv.shape[0]] = tv
             elif isinstance(tv, np.ndarray) and len(tv.shape):
                 target[tk][i, 0:tv.shape[0]] = torch.from_numpy(tv)
             else:
+                print(tk)
                 target[tk][i] = torch.tensor(tv, dtype=target[tk].dtype)
 
-    return tensor, target
+    return target
+
+
+def my_fast_collate_images(images_list):
+    batch_size = len(images_list)
+
+    images_tensor = torch.zeros((batch_size, *batch[0][0].shape), dtype=torch.uint8)
+    for i in range(batch_size):
+        tensor[i] += torch.tensor(images_list[i] * 255, dtype=torch.uint8)
+    return images_tensor
+
 
 class DetBenchTrain(nn.Module):
     def __init__(self, model, config):
@@ -132,28 +140,19 @@ class DetBenchTrain(nn.Module):
         self.anchor_labeler = AnchorLabeler(self.anchors, config.num_classes, match_threshold=0.5)
         self.loss_fn = DetectionLoss(self.config)
 
-    def forward(self, x, target):
-        print(x.shape)
-        print(x)
-        print(len(target))
-        print(target)
+    def forward(self, images, features, targets):
         # here x is list of images, traget is a list of dicts
-        x, target = fast_collate(tuple(zip(torch.split(x, 1, dim=0), target)))
-        print("---")
-        print(x.shape)
-        print(x)
-        print(len(target))
-        print(target)
-        class_out, box_out = self.model(x)  # EfficientDetBB (without the FPN), expects to get the features (output of FPN)
+        target = my_fast_collate(targets)
+        class_out, box_out = self.model(features)  # EfficientDetBB (without the FPN), expects to get the features (output of FPN)
         cls_targets, box_targets, num_positives = self.anchor_labeler.batch_label_anchors(
-            x.shape[0], target['boxes'], target['labels'])
+            images.shape[0], target['boxes'], target['labels'])
         loss, class_loss, box_loss = self.loss_fn(class_out, box_out, cls_targets, box_targets, num_positives)
         output = dict(loss=loss, class_loss=class_loss, box_loss=box_loss)
         if not self.training:
             # if eval mode, output detections for evaluation
             class_out, box_out, indices, classes = _post_process(self.config, class_out, box_out)
             output['detections'] = _batch_detection(
-                x.shape[0], class_out, box_out, self.anchors.boxes, indices, classes,
+                images.shape[0], class_out, box_out, self.anchors.boxes, indices, classes,
                 target['img_scale'], target['img_size'])
         return output
 

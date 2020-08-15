@@ -13,34 +13,33 @@ import torch
 #     finally:
 #         lock.release()
 
-# INTER_CUBIC
-def rescale(matrix, target_dim, pad_color=0, interpolation=cv2.INTER_NEAREST):
-    width = matrix.shape[1]
-    height = matrix.shape[0]
-    aspect_ratio = width / height
-    if target_dim == None or (width == target_dim and height == target_dim):
-        return matrix
+from PIL import Image
+import torchvision.transforms as transforms
+def rescale(matrix, target_dim, pad_color=0, interpolation=Image.NEAREST):
+    #thumbnail is a in-place operation
+    mode = None
+    if isinstance(matrix, Image.Image):
+        mode = 'RGB'
+        matrix_img = matrix
+    else:
+        mode = 'L'
+        matrix_img = transforms.ToPILImage(mode=mode)(matrix)
 
-    if width >= height:  # aspect_ratio >= 1
-        new_width = target_dim
-        new_height = int(new_width // aspect_ratio)
-        pad_left = pad_right = 0
-        pad_top = pad_bottom = (target_dim - new_height) // 2
-        if (pad_top * 2 + new_height) < target_dim:
-            pad_top += 1
-        assert (pad_top + pad_bottom + new_height) == target_dim
-    else:  # aspect_ratio < 1
-        new_height = target_dim
-        new_width = int(new_height * aspect_ratio)
-        pad_left = pad_right = (target_dim - new_width) // 2
-        pad_top = pad_bottom = 0
-        if (pad_left * 2 + new_width) < target_dim:
-            pad_left += 1
-        assert (pad_left + pad_right + new_width) == target_dim
+    orig_shape = matrix_img.size  # old_size[0] is in (width, height) format
+
+    ratio = float(target_dim)/max(orig_shape)
+    new_size = tuple([int(x*ratio) for x in orig_shape])
+    matrix_img.thumbnail(new_size, resample=interpolation)
+
+    # create a new image and paste the resized image on it
+    new_im = Image.new(mode, (target_dim, target_dim))
+    new_im.paste(matrix_img, ((target_dim-new_size[0])//2, (target_dim-new_size[1])//2))
     
-    matrix = cv2.resize(matrix, dsize=(new_width, new_height), interpolation=interpolation)
-    matrix = cv2.copyMakeBorder(matrix, pad_top, pad_bottom, pad_left, pad_right, borderType=cv2.BORDER_CONSTANT, value=pad_color)
-    return matrix
+    trans = transforms.ToTensor()
+    if isinstance(matrix, Image.Image):
+        return trans(new_im)
+    else:
+        return trans(new_im) * 255
 
 
 def get_labels(image_df):
@@ -61,7 +60,7 @@ def get_masks(image_df, target_dim=None, dtype=int):
 
     for segment, class_id in zip(segments, class_ids):
         # initialize empty mask
-        mask = np.zeros((height, width)).reshape(-1)
+        mask = torch.zeros((height, width), dtype=torch.uint8).reshape(-1)
 
         # iterate over encoded pixels to create the mask for this segment
         splitted_pixels = list(map(int, segment.split()))
@@ -73,24 +72,26 @@ def get_masks(image_df, target_dim=None, dtype=int):
             run_length = int(run_length)
             mask[pixel_start:pixel_start + run_length] = 1
 
-        mask = mask.reshape((height, width), order='F')
+        mask = torch.tensor(mask.numpy().reshape(height, width, order='F'))
+        # TODO(ofekp): find how to do this without converting to numpy
         mask = rescale(mask, target_dim)
-        masks.append(np.array(mask, dtype=dtype))
+        mask = mask.squeeze()
+        masks.append(mask)
 
     # there is a chance that the mask will be all zeros after the rescale
     count_bad = 0
     for mask in masks:
-        if np.max(mask) != 1.0:
+        if torch.max(mask) != 1.0:
             count_bad += 1
     if count_bad > 0:
         image_id = image_df['ImageId'].iloc[0]
         print('ERROR: Image [{}] contains [{}] segments that were erased due to rescaling with target_dim [{}]'.format(image_id, count_bad, target_dim))
-    return torch.as_tensor(masks, dtype=torch.uint8)
+    return torch.stack(masks)
 
 
 def get_bounding_boxes(image_df, masks):
     bounding_boxes = []
-    for curr_mask in masks:
+    for curr_mask in masks:  # [512, 512, 3]
         x_left = 0.0
         y_top = 0.0
         x_right = 0.0

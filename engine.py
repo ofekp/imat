@@ -27,7 +27,7 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, gradient_accum
     for images, targets in metric_logger.log_every(data_loader, print_freq, header):
         steps += 1  # gradient_accumulation
         images = list(image.to(device) for image in images)
-        targets = [{k: v.to(device) for k, v in t.items()} for t in targets]
+        targets = [{k: v.to(device) if torch.is_tensor(v) else v for k, v in t.items()} for t in targets]
 
         loss_dict = model(images, targets)
 

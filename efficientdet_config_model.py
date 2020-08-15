@@ -247,7 +247,7 @@ efficientdet_model_param_dict = dict(
     tf_efficientdet_d5=dict(
         name='tf_efficientdet_d5',
         backbone_name='tf_efficientnet_b5',
-        image_size=1280,
+        image_size=512,  # image_size=1280,
         fpn_channels=288,
         fpn_cell_repeats=7,
         box_class_repeats=4,
