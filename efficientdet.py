@@ -213,7 +213,6 @@ class BiFpnLayer(nn.Module):
         self.fnode = SequentialAppend()
         for i, fnode_cfg in enumerate(fpn_config.nodes):
             logging.debug('fnode {} : {}'.format(i, fnode_cfg))
-            print('fnode {} : {}'.format(i, fnode_cfg))
             fnode_layers = OrderedDict()
 
             # combine features
@@ -316,7 +315,6 @@ class BiFpn(nn.Module):
 class HeadNet(nn.Module):
     def __init__(self, config, num_outputs, norm_layer=nn.BatchNorm2d, norm_kwargs=None, act_layer=_ACT_LAYER):
         super(HeadNet, self).__init__()
-        print(num_outputs)
         norm_kwargs = norm_kwargs or {}
         self.config = config
         num_anchors = len(config.aspect_ratios) * config.num_scales
@@ -360,9 +358,6 @@ class HeadNet(nn.Module):
                     x_level = drop_path(x_level, self.config.fpn_drop_path_rate, self.training)
                     x_level += x_level_ident
             outputs.append(self.predict(x_level))
-        # ofekp - convert the output to tensor
-        for x in outputs:
-            print(x.shape)
         return outputs
 
 

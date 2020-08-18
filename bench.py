@@ -79,7 +79,7 @@ class DetBenchPredict(nn.Module):
 # ofekp - adding this method from https://github.com/rwightman/efficientdet-pytorch/blob/0b36cc1cccfe92febc64f6eb569ca4393bd73964/data/loader.py#L86
 import numpy as np 
 def my_fast_collate(targets):
-    MAX_NUM_INSTANCES = 30
+    MAX_NUM_INSTANCES = 150
     batch_size = len(targets)
 
     # FIXME this needs to be more robust
@@ -113,7 +113,6 @@ def my_fast_collate(targets):
             elif isinstance(tv, np.ndarray) and len(tv.shape):
                 target[tk][i, 0:tv.shape[0]] = torch.from_numpy(tv)
             else:
-                print(tk)
                 target[tk][i] = torch.tensor(tv, dtype=target[tk].dtype)
 
     return target
@@ -141,21 +140,32 @@ class DetBenchTrain(nn.Module):
         self.loss_fn = DetectionLoss(self.config)
 
     def forward(self, images, features, targets):
-        # here x is list of images, traget is a list of dicts
-        target = my_fast_collate(targets)
-        class_out, box_out = self.model(features)  # EfficientDetBB (without the FPN), expects to get the features (output of FPN)
-        cls_targets, box_targets, num_positives = self.anchor_labeler.batch_label_anchors(
-            images.shape[0], target['boxes'], target['labels'])
-        loss, class_loss, box_loss = self.loss_fn(class_out, box_out, cls_targets, box_targets, num_positives)
-        output = dict(loss=loss, class_loss=class_loss, box_loss=box_loss)
-        if not self.training:
-            # if eval mode, output detections for evaluation
+        # device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+        device = images.tensors.device
+        if targets is not None:
+            target = my_fast_collate(targets)
+            class_out, box_out = self.model(features)  # EfficientDetBB (without the FPN), expects to get the features (output of FPN)
+            cls_targets, box_targets, num_positives = self.anchor_labeler.batch_label_anchors(
+                images.tensors.shape[0], target['boxes'].to(device), target['labels'].to(device))
+            loss, class_loss, box_loss = self.loss_fn(class_out, box_out, cls_targets, box_targets, num_positives)
+            output = dict(loss=loss, class_loss=class_loss, box_loss=box_loss)
+            if not self.training:
+                # if eval mode, output detections for evaluation
+                class_out, box_out, indices, classes = _post_process(self.config, class_out, box_out)
+                output['detections'] = _batch_detection(
+                    images.tensors.shape[0], class_out, box_out, self.anchors.boxes, indices, classes,
+                    target['img_scale'].to(device), target['img_size'].to(device))
+            return output
+        else:
+            # def forward(self, x, img_scales, img_size):
+            class_out, box_out = self.model(features)
             class_out, box_out, indices, classes = _post_process(self.config, class_out, box_out)
+            output = dict()
+            # TODO(ofekp): 512 should use target_dim istead, can get this from images.image_sizes which is List[Tuple[int, int]]
+            image_sizes = torch.tensor((512, 512)).repeat(images.tensors.shape[0], 1)
             output['detections'] = _batch_detection(
-                images.shape[0], class_out, box_out, self.anchors.boxes, indices, classes,
-                target['img_scale'], target['img_size'])
-        return output
-
+                images.tensors.shape[0], class_out, box_out, self.anchors.boxes, indices, classes, images.get_images_scales().to(device), image_sizes.to(device))
+            return output
 
 def unwrap_bench(model):
     # Unwrap a model in support bench so that various other fns can access the weights and attribs of the
