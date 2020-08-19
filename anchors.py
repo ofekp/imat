@@ -214,11 +214,13 @@ def generate_detections(
     classes = classes[top_detection_idx, None]
 
     # xyxy to xywh & rescale to original image
-    boxes[:, 2] -= boxes[:, 0]
-    boxes[:, 3] -= boxes[:, 1]
+    # TODO(ofekp): we use xyxy in the data loader
+    # boxes[:, 2] -= boxes[:, 0]
+    # boxes[:, 3] -= boxes[:, 1]
     boxes *= img_scale
 
-    classes += 1  # back to class idx with background class = 0
+    # TODO(ofekp): WHY?!
+    #classes += 1  # back to class idx with background class = 0
 
     # stack em and pad out to MAX_DETECTIONS_PER_IMAGE if necessary
     detections = torch.cat([boxes, scores, classes.float()], dim=1)

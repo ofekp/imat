@@ -24,6 +24,7 @@ def _post_process(config, cls_outputs, box_outputs):
         box_outputs: an OrderDict with keys representing levels and values
             representing box regression targets in [batch_size, height, width, num_anchors * 4].
     """
+
     batch_size = cls_outputs[0].shape[0]
     cls_outputs_all = torch.cat([
         cls_outputs[level].permute(0, 2, 3, 1).reshape([batch_size, -1, config.num_classes])
@@ -79,7 +80,7 @@ class DetBenchPredict(nn.Module):
 # ofekp - adding this method from https://github.com/rwightman/efficientdet-pytorch/blob/0b36cc1cccfe92febc64f6eb569ca4393bd73964/data/loader.py#L86
 import numpy as np 
 def my_fast_collate(targets):
-    MAX_NUM_INSTANCES = 150
+    MAX_NUM_INSTANCES = 100  # TODO(ofekp): in anchors.py MAX_DETECTIONS_PER_IMAGE is 100
     batch_size = len(targets)
 
     # FIXME this needs to be more robust
