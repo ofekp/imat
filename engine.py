@@ -9,7 +9,7 @@ from coco_utils import get_coco_api_from_dataset
 from coco_eval import CocoEvaluator
 import utils
 
-def train_one_epoch(model, optimizer, data_loader, device, epoch, gradient_accumulation_steps, print_freq):
+def train_one_epoch(model, optimizer, data_loader, device, epoch, gradient_accumulation_steps, print_freq, box_threshold):
     model.train()
     metric_logger = utils.MetricLogger(delimiter="  ")
     metric_logger.add_meter('lr', utils.SmoothedValue(window_size=1, fmt='{value:.6f}'))
@@ -25,12 +25,15 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, gradient_accum
     optimizer.zero_grad()  # gradient_accumulation
     steps = 0  # gradient_accumulation
     for images, targets in metric_logger.log_every(data_loader, print_freq, header):
+        # print("target: {}".format(targets))
+
         steps += 1  # gradient_accumulation
         images = list(image.to(device) for image in images)
         targets = [{k: v.to(device) if torch.is_tensor(v) else v for k, v in t.items()} for t in targets]
 
-        loss_dict = model(images, targets)
+        loss_dict = model(images, box_threshold, targets)
 
+        # print(loss_dict)
         losses = sum(loss / gradient_accumulation_steps for loss in loss_dict.values())  # gradient_accumulation
 
         # reduce losses over all GPUs for logging purposes
@@ -46,6 +49,9 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, gradient_accum
 
         #optimizer.zero_grad()
         losses.backward()
+
+        # TODO(ofekp): grad clipping
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 10.0)
         
         # gradient_accumulation
         if steps % gradient_accumulation_steps == 0:
@@ -74,7 +80,7 @@ def _get_iou_types(model):
 
 
 @torch.no_grad()
-def evaluate(model, data_loader, device):
+def evaluate(model, data_loader, device, box_threshold=0.001):
     n_threads = torch.get_num_threads()
     # FIXME remove this and make paste_masks_in_image run on the GPU
     torch.set_num_threads(1)
@@ -93,12 +99,15 @@ def evaluate(model, data_loader, device):
 
         torch.cuda.synchronize()
         model_time = time.time()
-        outputs = model(images)
+        outputs = model(images, box_threshold)
+
+        # print(targets)
+        # print(outputs)
 
         outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
         model_time = time.time() - model_time
 
-        res = {target["image_id"].item(): output for target, output in zip(targets, outputs)}
+        res = {target["image_id"]: output for target, output in zip(targets, outputs)}  # TODO(ofekp): used to be target["image_id"].item()
         evaluator_time = time.time()
         coco_evaluator.update(res)
         evaluator_time = time.time() - evaluator_time

@@ -141,17 +141,25 @@ class DetBenchTrain(nn.Module):
         self.loss_fn = DetectionLoss(self.config)
 
     def forward(self, images, features, targets):
-        # device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+        # print("min [{}] max [{}]".format(torch.min(images.tensors[0]), torch.max(images.tensors[0])))
+        # min [-2.1179039478302] max [2.640000104904175]
+        features = [feature for _, feature in features.items()]
+        # print("features in bench {}".format(features))
         device = images.tensors.device
         if targets is not None:
             target = my_fast_collate(targets)
+            # print("traget after fast_collate {}".format(target))
             class_out, box_out = self.model(features)  # EfficientDetBB (without the FPN), expects to get the features (output of FPN)
             cls_targets, box_targets, num_positives = self.anchor_labeler.batch_label_anchors(
                 images.tensors.shape[0], target['boxes'].to(device), target['labels'].to(device))
+            # print("cls_targets len [{}]".format(len(cls_targets)))  # prints 5
+            # for ccc in cls_targets:
+            #     print("cls_target min [{}] max [{}]".format(torch.min(ccc), torch.max(ccc)))
             loss, class_loss, box_loss = self.loss_fn(class_out, box_out, cls_targets, box_targets, num_positives)
             output = dict(loss=loss, class_loss=class_loss, box_loss=box_loss)
             if not self.training:
                 # if eval mode, output detections for evaluation
+                assert (target['img_scale'].to(device) != 1.0).any() == False
                 class_out, box_out, indices, classes = _post_process(self.config, class_out, box_out)
                 output['detections'] = _batch_detection(
                     images.tensors.shape[0], class_out, box_out, self.anchors.boxes, indices, classes,
@@ -162,6 +170,7 @@ class DetBenchTrain(nn.Module):
             class_out, box_out = self.model(features)
             class_out, box_out, indices, classes = _post_process(self.config, class_out, box_out)
             output = dict()
+            assert (images.get_images_scales().to(device) != 1.0).any() == False
             # TODO(ofekp): 512 should use target_dim istead, can get this from images.image_sizes which is List[Tuple[int, int]]
             image_sizes = torch.tensor((512, 512)).repeat(images.tensors.shape[0], 1)
             output['detections'] = _batch_detection(

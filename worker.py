@@ -20,10 +20,10 @@ def rescale(matrix, target_dim, pad_color=0, interpolation=Image.NEAREST):
     mode = None
     if isinstance(matrix, Image.Image):
         mode = 'RGB'
-        matrix_img = matrix
+        matrix_img = matrix.copy()
     else:
         mode = 'L'
-        matrix_img = transforms.ToPILImage(mode=mode)(matrix)
+        matrix_img = transforms.ToPILImage(mode=mode)(matrix.clone())
 
     orig_shape = matrix_img.size  # old_size[0] is in (width, height) format
 
@@ -33,7 +33,7 @@ def rescale(matrix, target_dim, pad_color=0, interpolation=Image.NEAREST):
 
     # create a new image and paste the resized image on it
     new_im = Image.new(mode, (target_dim, target_dim))
-    new_im.paste(matrix_img, ((target_dim-new_size[0])//2, (target_dim-new_size[1])//2))
+    new_im.paste(matrix_img, ((0), (0)))
     
     trans = transforms.ToTensor()
     if isinstance(matrix, Image.Image):
@@ -46,10 +46,10 @@ def get_labels(image_df):
     return torch.as_tensor(list(image_df['ClassId']), dtype=torch.int64)
 
 
-def get_masks(image_df, target_dim=None, dtype=int):
+def get_masks(image_df, target_dim=None):
     '''
     given: the image df from the train_df or test_df
-    return: binary masks as a list (user can choose bool or int as dtype for the output)
+    return: binary masks as a list
     '''
     segments = list(image_df['EncodedPixels'])
     class_ids = list(image_df['ClassId'])
@@ -78,9 +78,11 @@ def get_masks(image_df, target_dim=None, dtype=int):
         mask = mask.squeeze()
         masks.append(mask)
 
-    # there is a chance that the mask will be all zeros after the rescale
+    # there is a chance that the mask will be all zeros after the rescale if the object was too small
     count_bad = 0
     for mask in masks:
+        assert torch.min(mask) >= 0
+        assert torch.max(mask) <= 1
         if torch.max(mask) != 1.0:
             count_bad += 1
     if count_bad > 0:
@@ -107,11 +109,12 @@ def get_bounding_boxes(image_df, masks):
             x_left = torch.min(cols_sum_non_zero)
             x_right = torch.max(cols_sum_non_zero)
         
-            # order is important as it is the input order the bb package is expecting
+            # order is important as it is the input order the bb package is expecting,
+            # so do NOT skip inserting the image
             if not (x_left >= 0 and x_left < x_right and y_top >= 0 and y_bottom > y_top):
                 image_id = image_df['ImageId'].iloc[0]
                 print("ERROR: Image [{}] x_left [{}] y_top [{}] x_right [{}] y_bottom [{}]".format(image_id, str(x_left), str(y_top), str(x_right), str(y_bottom)))
-        bounding_boxes.append((x_left, y_top, x_right, y_bottom))
+            bounding_boxes.append((x_left, y_top, x_right, y_bottom))
         
     return torch.as_tensor(bounding_boxes, dtype=torch.float32)
 

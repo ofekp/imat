@@ -308,7 +308,7 @@ class BiFpn(nn.Module):
         assert len(self.resample) == self.config.num_levels - len(x)
         x = self.resample(x)
         x = self.cell(x)
-        x = OrderedDict([(k, v) for k, v in enumerate(x)])  # ofekp - efficient det expects an OrderedDict
+        x = OrderedDict([(k, v) for k, v in enumerate(x)])  # ofekp - maskrcnn expects an OrderedDict
         return x
 
 
@@ -349,6 +349,7 @@ class HeadNet(nn.Module):
         outputs = []
         for level in range(self.config.num_levels):
             x_level = x[level]
+            # print("x_level {}".format(x_level))
             for i in range(self.config.box_class_repeats):
                 x_level_ident = x_level
                 x_level = self.conv_rep[i](x_level)

@@ -193,5 +193,6 @@ class DetectionLoss(nn.Module):
         cls_loss = torch.sum(torch.stack(cls_losses, dim=-1), dim=-1)
         box_loss = torch.sum(torch.stack(box_losses, dim=-1), dim=-1)
         total_loss = cls_loss + self.box_loss_weight * box_loss
+        # total_loss = cls_loss + box_loss
         return total_loss, cls_loss, box_loss
 
