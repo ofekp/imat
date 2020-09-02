@@ -1,0 +1,16 @@
+matplotlib
+sklearn
+tensorflow
+keras
+pandas
+opencv-python
+cython
+timm
+omegaconf
+timm
+torch
+ninja
+-e git://github.com/ofekp/vision.git
+-e git://github.com/ofekp/efficientdet-pytorch.git
+cython
+-e git://github.com/cocodataset/cocoapi.git#subdirectory=PythonAPI

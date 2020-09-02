@@ -3,6 +3,9 @@ import pandas as pd
 import numpy as np
 import cv2
 import torch
+from PIL import Image
+import torchvision.transforms as transforms
+# TODO(ofekp): worker.py should be renamed to utils.py or something
 
 # def worker(q, lock, counter, x):
 #     time.sleep(3.0 / x)
@@ -13,10 +16,7 @@ import torch
 #     finally:
 #         lock.release()
 
-from PIL import Image
-import torchvision.transforms as transforms
 def rescale(matrix, target_dim, pad_color=0, interpolation=Image.NEAREST):
-    #thumbnail is a in-place operation
     mode = None
     if isinstance(matrix, Image.Image):
         mode = 'RGB'
@@ -29,11 +29,12 @@ def rescale(matrix, target_dim, pad_color=0, interpolation=Image.NEAREST):
 
     ratio = float(target_dim)/max(orig_shape)
     new_size = tuple([int(x*ratio) for x in orig_shape])
+    # thumbnail is a in-place operation
     matrix_img.thumbnail(new_size, resample=interpolation)
 
     # create a new image and paste the resized image on it
     new_im = Image.new(mode, (target_dim, target_dim))
-    new_im.paste(matrix_img, ((0), (0)))
+    new_im.paste(matrix_img, ((target_dim-new_size[0])//2, (target_dim-new_size[1])//2))
     
     trans = transforms.ToTensor()
     if isinstance(matrix, Image.Image):
@@ -117,6 +118,27 @@ def get_bounding_boxes(image_df, masks):
             bounding_boxes.append((x_left, y_top, x_right, y_bottom))
         
     return torch.as_tensor(bounding_boxes, dtype=torch.float32)
+
+
+def remove_empty_masks(labels, masks, bounding_boxes):
+    indices_to_keep_masks = []  # empty array with 1 dim
+    idx = 0
+    for mask in masks:
+        if torch.max(mask).cpu().numpy() == 1:
+            indices_to_keep_masks.append(idx)
+        idx += 1
+
+    indices_to_keep_bbx = []  # empty array with 1 dim
+    idx = 0
+    for box in bounding_boxes:
+        if ((box[3] - box[1]) > 0) and ((box[2] - box[0]) > 0):
+            indices_to_keep_bbx.append(idx)
+        idx += 1
+
+    # TODO(ofekp): remove segments that have an area less than some thresholds (e.g. image id '361cc7654672860b1b7c85fe8e92b38a')
+
+    indices_to_keep = torch.tensor(list(set(indices_to_keep_masks) & set(indices_to_keep_bbx)), dtype=int)
+    return labels[indices_to_keep], masks[indices_to_keep], bounding_boxes[indices_to_keep]
 
 
 def inc_counter(lock, counter):
