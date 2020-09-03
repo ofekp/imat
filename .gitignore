@@ -3,6 +3,7 @@ bounding-box
 old_versions
 torchvision_lib
 Model
+Log
 
 # Jupyter Notebook
 .ipynb_checkpoints
