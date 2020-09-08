@@ -80,6 +80,7 @@ def get_masks(image_df, target_dim=None):
         masks.append(mask)
 
     # there is a chance that the mask will be all zeros after the rescale if the object was too small
+    # do not skip inserting bad masks, they will be filtered lated by remove_empty_masks
     count_bad = 0
     for mask in masks:
         assert torch.min(mask) >= 0
@@ -88,7 +89,7 @@ def get_masks(image_df, target_dim=None):
             count_bad += 1
     if count_bad > 0:
         image_id = image_df['ImageId'].iloc[0]
-        print('ERROR: Image [{}] contains [{}] segments that were erased due to rescaling with target_dim [{}]'.format(image_id, count_bad, target_dim))
+        #print('ERROR: Image [{}] contains [{}] segments that were erased due to rescaling with target_dim [{}]'.format(image_id, count_bad, target_dim))
     return torch.stack(masks)
 
 
@@ -114,7 +115,7 @@ def get_bounding_boxes(image_df, masks):
             # so do NOT skip inserting the image
             if not (x_left >= 0 and x_left < x_right and y_top >= 0 and y_bottom > y_top):
                 image_id = image_df['ImageId'].iloc[0]
-                print("ERROR: Image [{}] x_left [{}] y_top [{}] x_right [{}] y_bottom [{}]".format(image_id, str(x_left), str(y_top), str(x_right), str(y_bottom)))
+                #print("ERROR: Image [{}] x_left [{}] y_top [{}] x_right [{}] y_bottom [{}]".format(image_id, str(x_left), str(y_top), str(x_right), str(y_bottom)))
             bounding_boxes.append((x_left, y_top, x_right, y_bottom))
         
     return torch.as_tensor(bounding_boxes, dtype=torch.float32)
