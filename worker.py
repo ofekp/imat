@@ -102,12 +102,12 @@ def get_bounding_boxes(image_df, masks):
         y_bottom = 0.0
         if torch.max(curr_mask) == 1.0:
             rows_sum = torch.sum(curr_mask, axis=1)
-            rows_sum_non_zero = torch.nonzero(rows_sum)
+            rows_sum_non_zero = torch.where(rows_sum > 0)[0]
             y_top = torch.min(rows_sum_non_zero)
             y_bottom = torch.max(rows_sum_non_zero)
     
             cols_sum = torch.sum(curr_mask, axis=0)
-            cols_sum_non_zero = torch.nonzero(cols_sum)
+            cols_sum_non_zero = torch.where(cols_sum > 0)[0]
             x_left = torch.min(cols_sum_non_zero)
             x_right = torch.max(cols_sum_non_zero)
         
