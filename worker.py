@@ -25,16 +25,19 @@ def rescale(matrix, target_dim, pad_color=0, interpolation=Image.NEAREST):
         mode = 'L'
         matrix_img = transforms.ToPILImage(mode=mode)(matrix.clone())
 
-    orig_shape = matrix_img.size  # old_size[0] is in (width, height) format
+    if target_dim:
+        orig_shape = matrix_img.size  # old_size[0] is in (width, height) format
 
-    ratio = float(target_dim)/max(orig_shape)
-    new_size = tuple([int(x*ratio) for x in orig_shape])
-    # thumbnail is a in-place operation
-    matrix_img.thumbnail(new_size, resample=interpolation)
+        ratio = float(target_dim)/max(orig_shape)
+        new_size = tuple([int(x*ratio) for x in orig_shape])
+        # thumbnail is a in-place operation
+        matrix_img.thumbnail(new_size, resample=interpolation)
 
-    # create a new image and paste the resized image on it
-    new_im = Image.new(mode, (target_dim, target_dim))
-    new_im.paste(matrix_img, ((target_dim-new_size[0])//2, (target_dim-new_size[1])//2))
+        # create a new image and paste the resized image on it
+        new_im = Image.new(mode, (target_dim, target_dim))
+        new_im.paste(matrix_img, ((target_dim-new_size[0])//2, (target_dim-new_size[1])//2))
+    else:
+        new_im = matrix_img
     
     trans = transforms.ToTensor()
     if isinstance(matrix, Image.Image):
