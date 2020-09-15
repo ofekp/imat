@@ -5,16 +5,7 @@ import cv2
 import torch
 from PIL import Image
 import torchvision.transforms as transforms
-# TODO(ofekp): worker.py should be renamed to utils.py or something
 
-# def worker(q, lock, counter, x):
-#     time.sleep(3.0 / x)
-#     q.put(x*x)
-#     lock.acquire()
-#     try:
-#         counter.value += 1
-#     finally:
-#         lock.release()
 
 def rescale(matrix, target_dim, pad_color=0, interpolation=Image.NEAREST):
     mode = None
@@ -145,33 +136,42 @@ def remove_empty_masks(labels, masks, bounding_boxes):
     return labels[indices_to_keep], masks[indices_to_keep], bounding_boxes[indices_to_keep]
 
 
-def inc_counter(lock, counter):
-    lock.acquire()
-    try:
-        counter.value += 1
-    finally:
-        lock.release()
-    print(counter.value)
+# def worker(q, lock, counter, x):
+#     time.sleep(3.0 / x)
+#     q.put(x*x)
+#     lock.acquire()
+#     try:
+#         counter.value += 1
+#     finally:
+#         lock.release()
+
+# def inc_counter(lock, counter):
+#     lock.acquire()
+#     try:
+#         counter.value += 1
+#     finally:
+#         lock.release()
+#     print(counter.value)
 
 
-def worker(processed_data_folder_path, worker_id, image_ids, train_df, lock, counter, skipped_images):
-    train_processed_df = pd.DataFrame()
-    for image_id in image_ids:
-        vis_df = train_df[train_df['ImageId'] == image_id]
-        vis_df = vis_df.reset_index(drop=True)
-        labels = get_labels(vis_df)
-        try:
-            masks = get_masks(vis_df)
-        except:
-            skipped_images.put(image_id)
-            inc_counter(lock, counter)
-            continue
-        boxes = get_bounding_boxes(masks)
-        image_df = pd.DataFrame({"image_id": image_id, "labels": [labels], "masks": [masks], "boxes": [boxes]})
-        train_processed_df = train_processed_df.append(image_df)
-        inc_counter(lock, counter)
-    train_processed_df.to_pickle(processed_data_folder_path + str(worker_id))
-    # q.put(train_processed_df)
-    # q.close()
-    # skipped_images.close()
-    return
+# def worker(processed_data_folder_path, worker_id, image_ids, train_df, lock, counter, skipped_images):
+#     train_processed_df = pd.DataFrame()
+#     for image_id in image_ids:
+#         vis_df = train_df[train_df['ImageId'] == image_id]
+#         vis_df = vis_df.reset_index(drop=True)
+#         labels = get_labels(vis_df)
+#         try:
+#             masks = get_masks(vis_df)
+#         except:
+#             skipped_images.put(image_id)
+#             inc_counter(lock, counter)
+#             continue
+#         boxes = get_bounding_boxes(masks)
+#         image_df = pd.DataFrame({"image_id": image_id, "labels": [labels], "masks": [masks], "boxes": [boxes]})
+#         train_processed_df = train_processed_df.append(image_df)
+#         inc_counter(lock, counter)
+#     train_processed_df.to_pickle(processed_data_folder_path + str(worker_id))
+#     # q.put(train_processed_df)
+#     # q.close()
+#     # skipped_images.close()
+#     return

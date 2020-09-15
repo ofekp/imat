@@ -5,9 +5,12 @@ keras
 pandas
 opencv-python
 cython
-timm
 omegaconf
 timm
+h5py
+nvidia-ml-py3
+cv2
+ipywidgets
 torch
 ninja
 -e git://github.com/ofekp/vision.git

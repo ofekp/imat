@@ -63,3 +63,12 @@ class ToTensor(object):
     def __call__(self, image, target):
         image = F.to_tensor(image)
         return image, target
+
+
+def get_transform(train):
+    transforms = []
+#     transforms.append(T.ToTensor())
+    if train:
+        transforms.append(RandomHorizontalFlip(0.5))
+        transforms.append(RandomGreyscale(0.1))
+    return Compose(transforms)
