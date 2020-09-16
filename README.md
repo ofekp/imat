@@ -1,4 +1,7 @@
-# imat
+# Introduction
 
 
-# TODO(ofekp): complete this from the article!
+# Installation
+pip install -r requirements.txt
+
+# TODO(ofekp): complete this using the article!

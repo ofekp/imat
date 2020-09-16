@@ -52,6 +52,9 @@ from timm import create_model
 import effdet
 from effdet import BiFpn, DetBenchTrain, EfficientDet, load_pretrained, load_pretrained, HeadNet
 import subprocess
+import sys
+import functools
+print = functools.partial(print, flush=True)
 
 is_colab = False
 try:
@@ -77,6 +80,8 @@ torch.manual_seed(seed)
 
 parser = argparse.ArgumentParser(description='Training Config')
 
+# parsing boolean typed arguments
+# refer to https://stackoverflow.com/questions/15008758/parsing-boolean-values-with-argparse
 def str2bool(v):
     if isinstance(v, bool):
        return v
@@ -98,7 +103,7 @@ parser.add_argument('--batch-size', type=int, default=12, metavar='BATCH_SIZE',
                     help='batch size (default: 12)')
 parser.add_argument('--num-workers', type=int, default=4, metavar='NUM_WORKERS',
                     help='number of workers for the dataloader (default: 4)')
-parser.add_argument('--num-epochs', type=int, default=4, metavar='NUM_EPOCHS',
+parser.add_argument('--num-epochs', type=int, default=150, metavar='NUM_EPOCHS',
                     help='number of epochs (default: 150)')
 parser.add_argument('--model-file-suffix', type=str, default='effdet_h5py_rpn', metavar='SUFFIX',  # TODO(ofekp): default should be empty string?
                     help='Suffix to identify the model file that is saved during training (default=effdet_h5py_rpn)')
@@ -411,8 +416,8 @@ class Trainer:
         self.target_dim = target_dim
         self.is_colab = is_colab
         self.data_limit = data_limit
-        self.optimizer = config.optimizer_class(self.model.parameters(), **config.optimizer_config)
-        self.scheduler = config.scheduler_class(self.optimizer, **config.scheduler_config)
+        self.optimizer = self.config.optimizer_class(self.model.parameters(), **self.config.optimizer_config)
+        self.scheduler = self.config.scheduler_class(self.optimizer, **self.config.scheduler_config)
         self.model_file_path = self.get_model_file_path(is_colab, suffix=config.model_file_suffix)
         self.log_file_path = self.get_log_file_path(is_colab, suffix=config.model_file_suffix)
         self.epoch = 0
@@ -475,8 +480,13 @@ class Trainer:
         if not os.path.isfile(self.model_file_path):
             self.log("Cannot load model file [{}] since it does not exist".format(self.model_file_path))
             return False
-        checkpoint = torch.load(self.model_file_path, map_location=device)
+        checkpoint = torch.load(self.model_file_path)  # map_location=device
         self.model.load_state_dict(checkpoint['model_state_dict'])
+        # model must be moved to device before we init the optimizer otherwise loading a model and training
+        # again will procduce the "both cpu and cuda" error, refer to the solution in this thread:
+        # https://discuss.pytorch.org/t/code-that-loads-sgd-fails-to-load-adam-state-to-gpu/61783
+        # I also added the solution to this issue https://github.com/pytorch/pytorch/issues/34470
+        self.model.to(device)
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
         self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
 #         self.best_summary_loss = checkpoint['best_summary_loss']
@@ -600,6 +610,11 @@ def main():
     with open("Args/args_text.yml", 'w') as args_file:
         args_file.write(args_text)
 
+    os.remove("./Log/20200916.log")
+    log_file = open("./Log/20200916.log", "w")
+    old_stdout = sys.stdout
+    sys.stdout = log_file
+
     # device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     isTPU = False
     forceCPU = False
@@ -613,7 +628,6 @@ def main():
     if device == 'cuda:0':
         print("Device description [{}]".format(torch.cuda.get_device_name(0)))
 
-    
     num_classes, train_df, test_df, categories_df = process_data(main_folder_path, args.data_limit)
     print("Setting target_dim to [{}]".format(args.target_dim))
 
@@ -634,6 +648,9 @@ def main():
         model.to(device)
         print_nvidia_smi(device)
         trainer.train()
+
+    sys.stdout = old_stdout
+    log_file.close()
 
 
 if __name__ == '__main__':
