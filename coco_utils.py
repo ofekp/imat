@@ -162,7 +162,7 @@ def convert_to_coco_api(ds):
         bboxes = targets["boxes"]
         bboxes[:, 2:] -= bboxes[:, :2]
         bboxes = bboxes.tolist()
-        labels = targets['labels'].tolist()
+        labels = torch.sub(targets['labels'], 1).tolist()  # TODO(ofekp): used to be just 'targets['labels'].tolist()', subtracting one since in the dataset we added one for effdet training
         areas = targets['area'].tolist()
         iscrowd = targets['iscrowd'].tolist()
         if 'masks' in targets:

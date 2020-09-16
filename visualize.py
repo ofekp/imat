@@ -50,7 +50,7 @@ class Visualize:
         return image_with_bb
 
 
-    def show_image_data_ground_truth(self, data_df, image_id, is_colab, figsize=(30, 30)):
+    def show_image_data_ground_truth(self, data_df, image_id, is_colab, figsize=(40, 40)):
         # Get the an image id given in the training set for visualization
         vis_df = data_df[data_df['ImageId'] == image_id]
         vis_df = vis_df.reset_index(drop=True)
@@ -63,7 +63,7 @@ class Visualize:
         self.show_image_data(img, class_ids, masks, bounding_boxes, figsize=figsize)
 
 
-    def show_image_data(self, img, class_ids, masks, bounding_boxes, figsize=(30, 30), split_segments=False):
+    def show_image_data(self, img, class_ids, masks, bounding_boxes, figsize=(40, 40), split_segments=False):
         height = img.shape[2]
         width = img.shape[1]
         image_with_bb = self.get_image_bounding_boxes(height, width, bounding_boxes, class_ids)

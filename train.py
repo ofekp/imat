@@ -1,80 +1,3 @@
-
-isTPU = False
-forceCPU = False
-skip_pip = False
-
-is_colab = False
-try:
-    from google.colab import drive
-    print("Running on Google Colab")
-    is_colab = True
-except:
-    print("Running on non Google Colab env")
-
-if is_colab and not skip_pip:
-# if True:
-    # pip install
-    for pkg in ['matplotlib',
-                'sklearn',
-                'tensorflow',     # required by by keras
-                'keras',
-                'pandas',
-                'opencv-python',  # cv2
-                'cython',         # required by pycocotools
-                'omegaconf',
-                'timm',           # originally was - !pip install -U timm --user
-                'h5py',
-                'nvidia-ml-py3'
-                'cv2'
-                'ipywidgets']:
-        !pip install -U $pkg
-
-    # torchvision from ofekp repo
-    # I made a change in torchvision library, so it needs to be compiled from the source code
-    # I could not make this work on windows, for linux (ubuntu) use this:
-    # TODO(ofekp): uninstall this and see if it is needed !pip install nvidia-ml-py
-    !sudo apt install build-essential --assume-yes
-    # bounding box needs the following
-    !sudo apt-get install ffmpeg libsm6 libxext6 -y
-    # torch must be installed with cuda 10.1 since the env is set up with cuda 10.1
-    # also, torch is not yes supporting cuda version > 10.1 (e.g. cuda 11)
-    if not isTPU:
-        # refer to https://pytorch.org/get-started/locally/ to get the command for installation without cuda
-        !pip install torch==1.6.0+cu101 -f https://download.pytorch.org/whl/torch_stable.html
-    else:
-        !pip install torch
-
-    !sudo apt install libavcodec-dev --assume-yes
-    !sudo apt install libavformat-dev --assume-yes
-    !sudo apt install libswscale-dev --assume-yes
-    !pip install ninja
-    !pip install git+https://github.com/ofekp/vision.git
-        
-    # effdet from ofekp repo
-    !pip install git+https://github.com/ofekp/efficientdet-pytorch.git
-
-    # Install coco_utils
-    # Win10:
-    #       !pip install cython
-    #       now follow this guide (Exactly!): https://github.com/philferriere/cocoapi
-    #       update: I fixed support for numpy > 1.17 due to error "'numpy.float64' object cannot be interpreted as an integer"
-    #       to include it use my git repo "pip install git+https://github.com/ofekp/cocoapi.git#subdirectory=PythonAPI"
-    #       make sure to remove the previous version before installing from my branch by using "pip uninstall pycocotools"
-    #
-    # Colab/Linux: 
-    !pip install cython
-    !pip install -U git+https://github.com/cocodataset/cocoapi.git#subdirectory=PythonAPI
-
-    # TODO(ofekp): this is probably not needed
-    # Install segmentation package
-    #!pip install -U segmentation-models-pytorch albumentations --user
-
-    # TODO(ofekp): This is not needed since I made a change and the code is now directly in the folder
-    # https://github.com/nalepae/bounding-box.git
-    # !pip install bounding-box
-    # !git clone https://github.com/nalepae/bounding-box.git
-    # !pip uninstall -y bounding-box
-
 import torchvision
 import torchvision.transforms as transforms
 import torch
@@ -113,31 +36,6 @@ import visualize
 from torch.utils.data import DataLoader
 from torch.utils.data import Dataset as BaseDataset
 
-warnings.filterwarnings('ignore')
-
-# connect to Google Drive
-if is_colab:
-    from google.colab import drive
-    from google.colab import files
-    drive.mount('/content/gdrive')
-    print("Folder content:")
-    main_folder_path = '/content/gdrive/Shared drives/project_200446375_204031231/'
-    main_folder_path_escaped = main_folder_path.replace(" ", "\ ")
-    !ls $main_folder_path_escaped
-    ofek_code_folder_imports = '/content/gdrive/Shared drives/project_200446375_204031231/code_ofek/*.{py,ttf}'
-    ofek_code_folder_imports = ofek_code_folder_imports.replace(" ", "\ ")
-    !cp $ofek_code_folder_imports .
-else:
-    main_folder_path = '../'
-    %matplotlib inline
-    # for local run, make the notebook wider with this code
-    from IPython.core.display import display, HTML
-    display(HTML("<style>.container { width:90% !important; }</style>"))
-    pd.set_option('display.max_rows', 500)
-    pd.set_option('display.max_columns', 500)
-    pd.set_option('display.width', 150)
-
-
 # imports external packages (from folder)
 import helpers
 import utils
@@ -153,12 +51,20 @@ from timm.models.layers import get_act_layer
 from timm import create_model
 import effdet
 from effdet import BiFpn, DetBenchTrain, EfficientDet, load_pretrained, load_pretrained, HeadNet
+import subprocess
 
-if isTPU:
-    import torch
-    !env | grep TPU
-    import torch_xla
-    import torch_xla.core.xla_model as xm
+is_colab = False
+try:
+    from google.colab import drive
+    print("Running on Google Colab")
+    is_colab = True
+except:
+    print("Running on non Google Colab env")
+
+warnings.filterwarnings('ignore')
+pd.set_option('display.max_rows', 500)
+pd.set_option('display.max_columns', 500)
+pd.set_option('display.width', 150)
 
 # seeds
 # following is needed for reproducibility
@@ -170,6 +76,16 @@ np.random.seed(seed)
 torch.manual_seed(seed)
 
 parser = argparse.ArgumentParser(description='Training Config')
+
+def str2bool(v):
+    if isinstance(v, bool):
+       return v
+    if v.lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif v.lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value expected but got [{}].'.format(v))
 
 # training params
 parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
@@ -184,27 +100,29 @@ parser.add_argument('--num-workers', type=int, default=4, metavar='NUM_WORKERS',
                     help='number of workers for the dataloader (default: 4)')
 parser.add_argument('--num-epochs', type=int, default=4, metavar='NUM_EPOCHS',
                     help='number of epochs (default: 150)')
-parser.add_argument('--model-name-suffix', type=str, default='effdet_h5py_rpn', metavar='SUFFIX',  # TODO(ofekp): default should be empty string?
+parser.add_argument('--model-file-suffix', type=str, default='effdet_h5py_rpn', metavar='SUFFIX',  # TODO(ofekp): default should be empty string?
                     help='Suffix to identify the model file that is saved during training (default=effdet_h5py_rpn)')
-parser.add_argument('--add-user-name-to-model-file', type=bool, default=True, metavar='BOOL',
+parser.add_argument('--add-user-name-to-model-file', type=str2bool, default=True, metavar='BOOL',
                     help='Will add the user name to the model file that is saved during training (default=True)')
-parser.add_argument('--load-model', type=bool, default=True, metavar='BOOL',
+parser.add_argument('--load-model', type=str2bool, default=True, metavar='BOOL',
                     help='Will load a model file (default=False)')
-parser.add_argument('--train', type=bool, default=True, metavar='BOOL',
+parser.add_argument('--train', type=str2bool, default=True, metavar='BOOL',
                     help='Will start training the model (default=True)')
-parser.add_argument('--data-limit', type=int, default=10000, metavar='DATA_LIMIT',
-                    help='Specify data limit, None to use all the data (default=10000)')
+parser.add_argument('--data-limit', type=int, default=12500, metavar='DATA_LIMIT',
+                    help='Specify data limit, None to use all the data (default=12500)')
 parser.add_argument('--target-dim', type=int, default=512, metavar='DIM',
                     help='Dimention of the images. It is vital that the image size will be devisiable by 2 at least 6 times (default=512)')
-parser.add_argument('--h5py-dataset', type=bool, default=True, metavar='BOOL',
+parser.add_argument('--h5py-dataset', type=str2bool, default=True, metavar='BOOL',
                     help='Use an H5PY dataset as created using h5py_dataset_writer.py (default=True)')
+parser.add_argument('--freeze-batch-norm-weights', type=str2bool, default=True, metavar='BOOL',
+                    help='Freeze batch normalization weights (default=True)')
 
 # scheduler params
 parser.add_argument('--sched-factor', type=float, default=0.01, metavar='FACTOR',
                     help='scheduler factor (default: 0.5)')
 parser.add_argument('--sched-patience', type=int, default=1, metavar='PATIENCE',
                     help='scheduler patience (default: 1)')
-parser.add_argument('--sched-verbose', type=bool, default=False, metavar='VERBOSE',
+parser.add_argument('--sched-verbose', type=str2bool, default=False, metavar='VERBOSE',
                     help='scheduler verbosity (default: False)')
 parser.add_argument('--sched-threshold', type=float, default=0.0001, metavar='THRESHOLD',
                     help='scheduler threshold (default: 0.0001)')
@@ -214,7 +132,7 @@ parser.add_argument('--sched-eps', type=float, default=1e-08, metavar='EPS',
                     help='scheduler epsilon (default: 1e-08)')
 
 # additional params
-parser.add_argument('--gradient-accmulation-steps', type=int, default=2, metavar='NUM_EPOCHS',
+parser.add_argument('--gradient-accumulation-steps', type=int, default=2, metavar='NUM_EPOCHS',
                     help='number of epoch to accomulate gradients before applying back-prop (default: 2)')  # TODO(ofekp): change to 1?
 parser.add_argument('--save-every', type=int, default=5, metavar='NUM_EPOCHS',
                     help='save the model every few epochs (default: 5)')
@@ -237,40 +155,24 @@ current_time_millis = lambda: int(round(time.time() * 1000))
 def print_bold(str):
     print("\033[1m" + str + "\033[0m")
 
-    
-def print_nvidia_smi():
+
+def run_os(cmd_as_list):
+    process = subprocess.Popen(cmd_as_list,
+                     stdout=subprocess.PIPE, 
+                     stderr=subprocess.PIPE)
+    stdout, stderr = process.communicate()
+    stdout = stdout.strip().decode('utf-8') if stdout is not None else stdout
+    stderr = stderr.strip().decode('utf-8') if stderr is not None else stderr
+    return stdout, stderr
+
+
+def print_nvidia_smi(device):
     if device == 'cuda:0':
-        !nvidia-smi --query-gpu=memory.used,memory.free,memory.total --format=csv
+        stderr, _ = run_os(['nvidia-smi', '--query-gpu=memory.used,memory.free,memory.total', '--format=csv'])
+        print(stderr)
 
 
-def reload_external_packages():
-    '''
-    reloads the package with changes
-    IMPORTANT:
-        If you use this, you cannot save the model with torch.save()!
-        It will cause an exception in Pickle
-    '''
-    if is_colab:
-        ofek_code_folder_imports = '/content/gdrive/Shared drives/project_200446375_204031231/code_ofek/*.{py,ttf}'
-        ofek_code_folder_imports = ofek_code_folder_imports.replace(" ", "\ ")
-        !cp $ofek_code_folder_imports .
-    importlib.reload(helpers)
-    importlib.reload(bbx)
-    importlib.reload(torch)
-    importlib.reload(torchvision)
-    importlib.reload(engine)
-    importlib.reload(pycocotools)
-    importlib.reload(coco_utils)
-    importlib.reload(coco_eval)
-    importlib.reload(utils)
-    importlib.reload(transforms)
-    
-    
-def get_model_identifier():
-    return 'dim_' + str(args.target_dim) + '_images_' + str(limit_data) + '_classes_' + str(num_classes)
-
-
-def process_data(main_folder_path, limit_data):
+def process_data(main_folder_path, data_limit):
     allowed_classes = None  # np.array([0,1,6,9,10,20,23,24,31,32,33])
 
     with open(main_folder_path + '/Data/label_descriptions.json', 'r') as file:
@@ -286,9 +188,9 @@ def process_data(main_folder_path, limit_data):
     image_ids = cut_data_df['ImageId'].unique()
     image_ids_cut = image_ids
 
-    if limit_data is not None:
-        print("Data is limited to [{}] images".format(limit_data))
-        image_ids_cut = image_ids[:limit_data]
+    if data_limit is not None:
+        print("Data is limited to [{}] images".format(data_limit))
+        image_ids_cut = image_ids[:data_limit]
 
     image_train_count = int(len(image_ids_cut) * 0.8)
     image_ids_train = image_ids_cut[:image_train_count]
@@ -299,13 +201,13 @@ def process_data(main_folder_path, limit_data):
     test_df = cut_data_df[cut_data_df['ImageId'].isin(image_ids_test)]
     assert len(cut_data_df) == (len(test_df) + len(train_df))
 
-    print("Train data size [{}] test data size [{}]".format(len(train_df), len(test_df)))
+    print("Train data size [{}] test data size [{}] (counting in segments)".format(len(train_df), len(test_df)))
     print()
     num_classes = None
     if allowed_classes is None:
-    num_classes = len(data_df['ClassId'].unique())
+        num_classes = len(data_df['ClassId'].unique())
     else:
-    num_classes = len(allowed_classes)
+        num_classes = len(allowed_classes)
     num_attributes = len(label_desc['attributes'])
     print_bold("Classes")
     categories_df = pd.DataFrame(label_desc['categories'])
@@ -422,7 +324,7 @@ class BackboneWithCustomFPN(nn.Module):
         return x
 
 
-def get_model_instance_segmentation_efficientnet(num_classes, freeze_batch_norm=False):
+def get_model_instance_segmentation_efficientnet(num_classes, target_dim, freeze_batch_norm=False):
     # let's make the RPN generate 5 x 3 anchors per spatial
     # location, with 5 different sizes and 3 different aspect
     # ratios. We have a Tuple[Tuple[int]] because each feature
@@ -454,13 +356,13 @@ def get_model_instance_segmentation_efficientnet(num_classes, freeze_batch_norm=
     efficientDetModelTemp = EfficientDet(config, pretrained_backbone=False)
     load_pretrained(efficientDetModelTemp, config.url)
     config.num_classes = num_classes
-    config.image_size = args.target_dim
+    config.image_size = target_dim
 
     out_channels = config.fpn_channels  # This is since the config of 'tf_efficientdet_d5' creates fpn outputs with num of channels = 288
     backbone_fpn = BackboneWithCustomFPN(config, efficientDetModelTemp.backbone, efficientDetModelTemp.fpn, out_channels)  # TODO(ofekp): pretrained! # from the repo trainable_layers=trainable_backbone_layers=3
     model = MaskRCNN(backbone_fpn,
-                 min_size=args.target_dim,
-                 max_size=args.target_dim,
+                 min_size=target_dim,
+                 max_size=target_dim,
                  num_classes=num_classes,
                  mask_roi_pool=mask_roi_pool,
 #                  rpn_anchor_generator=anchor_generator,
@@ -498,7 +400,8 @@ def get_model_instance_segmentation_efficientnet(num_classes, freeze_batch_norm=
 
 class Trainer:
     
-    def __init__(self, model, train_df, test_df, num_classes, target_dim, categories_df, device, config):
+    def __init__(self, main_folder_path, model, train_df, test_df, data_limit, num_classes, target_dim, categories_df, device, is_colab, config):
+        self.main_folder_path = main_folder_path
         self.model = model
         self.train_df = train_df
         self.test_df = test_df
@@ -506,16 +409,38 @@ class Trainer:
         self.config = config
         self.num_classes = num_classes
         self.target_dim = target_dim
+        self.is_colab = is_colab
+        self.data_limit = data_limit
         self.optimizer = config.optimizer_class(self.model.parameters(), **config.optimizer_config)
         self.scheduler = config.scheduler_class(self.optimizer, **config.scheduler_config)
-        self.model_file_path = get_model_file_path(suffix=config.model_name_suffix)
-        self.log_file_path = get_log_file_path(suffix=config.model_name_suffix)
+        self.model_file_path = self.get_model_file_path(is_colab, suffix=config.model_file_suffix)
+        self.log_file_path = self.get_log_file_path(is_colab, suffix=config.model_file_suffix)
         self.epoch = 0
-        self.visualize = visualize.Visualize(main_folder_path, categories_df, dest_folder='Images')
+        self.visualize = visualize.Visualize(self.main_folder_path, categories_df, self.target_dim, dest_folder='Images')
+
+        # use our dataset and defined transformations
+        if self.config.h5py_dataset:
+            h5_reader = imat_dataset.DatasetH5Reader("../imaterialist_" + str(self.target_dim) + ".hdf5")
+            self.dataset = imat_dataset.IMATDatasetH5PY(h5_reader, self.num_classes, self.target_dim, T.get_transform(train=True))
+            h5_reader_test = imat_dataset.DatasetH5Reader("../imaterialist_test_" + str(self.target_dim) + ".hdf5")
+            self.dataset_test = imat_dataset.IMATDatasetH5PY(h5_reader_test, self.num_classes, self.target_dim, T.get_transform(train=False))
+        else:
+            self.dataset = imat_dataset.IMATDataset(self.main_folder_path, self.train_df, self.num_classes, self.target_dim, False, T.get_transform(train=True))
+            self.dataset_test = imat_dataset.IMATDataset(self.main_folder_path, self.test_df, self.num_classes, self.target_dim, False, T.get_transform(train=False))
+        
+        # TODO(ofekp): do we need this?
+        # split the dataset in train and test set
+        # indices = torch.randperm(len(dataset)).tolist()
+        # dataset = torch.utils.data.Subset(dataset, indices[:-50])
+        # dataset_test = torch.utils.data.Subset(dataset_test, indices[-50:])
+
         self.log('Trainer initiallized. Device is [{}]'.format(self.device))
 
-    def get_model_file_path(prefix=None, suffix=None):
-        model_file_path = get_model_identifier()
+    def get_model_identifier(self):
+        return 'dim_' + str(self.target_dim) + '_images_' + str(self.data_limit) + '_classes_' + str(self.num_classes)
+
+    def get_model_file_path(self, is_colab, prefix=None, suffix=None):
+        model_file_path = self.get_model_identifier()
         if prefix:
             model_file_path = prefix + '_' + model_file_path
         if suffix:
@@ -524,14 +449,14 @@ class Trainer:
         model_file_path = 'Model/' + model_file_path + '.model'
 
         if is_colab:
-            model_file_path = main_folder_path + 'code_ofek/' + model_file_path
+            model_file_path = self.main_folder_path + 'code_ofek/' + model_file_path
         else:
-            model_file_path = main_folder_path + 'Code/' + model_file_path
+            model_file_path = self.main_folder_path + 'Code/' + model_file_path
         
         return model_file_path
 
-    def get_log_file_path(prefix=None, suffix=None):
-        log_file_path = get_model_identifier()
+    def get_log_file_path(self, is_colab, prefix=None, suffix=None):
+        log_file_path = self.get_model_identifier()
         if prefix:
             log_file_path = prefix + '_' + log_file_path
         if suffix:
@@ -540,13 +465,16 @@ class Trainer:
         log_file_path = 'Log/' + log_file_path + '.log'
 
         if is_colab:
-            log_file_path = main_folder_path + 'code_ofek/' + log_file_path
+            log_file_path = self.main_folder_path + 'code_ofek/' + log_file_path
         else:
-            log_file_path = main_folder_path + 'Code/' + log_file_path
+            log_file_path = self.main_folder_path + 'Code/' + log_file_path
         
         return log_file_path
 
     def load_model(self, device):
+        if not os.path.isfile(self.model_file_path):
+            self.log("Cannot load model file [{}] since it does not exist".format(self.model_file_path))
+            return False
         checkpoint = torch.load(self.model_file_path, map_location=device)
         self.model.load_state_dict(checkpoint['model_state_dict'])
         self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
@@ -554,8 +482,9 @@ class Trainer:
 #         self.best_summary_loss = checkpoint['best_summary_loss']
         self.epoch = checkpoint['epoch'] + 1
         self.log("Loaded model file [{}]".format(self.model_file_path))
+        return True
         
-    def save_model(self, dataset_test):
+    def save_model(self):
         if (self.epoch) % self.config.save_every == 0:
             self.model.eval()
             torch.save({
@@ -564,17 +493,17 @@ class Trainer:
                 'scheduler_state_dict': self.scheduler.state_dict(),
     #             'best_summary_loss': self.best_summary_loss,
                 'epoch': self.epoch,
-            }, path)        
-            self.log('Saved model to [{}]'.format(path))
-            print_nvidia_smi()
-            dataset_test.show_stats()
+            }, self.model_file_path)        
+            self.log('Saved model to [{}]'.format(self.model_file_path))
+            print_nvidia_smi(self.device)
+            self.dataset_test.show_stats()
 
-    def eval_model(self, data_loader_test, dataset_test):
+    def eval_model(self, data_loader_test):
         if (self.epoch) % self.config.eval_every == 0:
-            model.eval()
+            self.model.eval()
             with torch.no_grad():
-                img_idx = 0
-                visualize.show_prediction_on_img(self.model, dataset_test, self.test_df, img_idx, is_colab, show_groud_truth=False, box_threshold=self.config.box_threshold, split_segments=True)  # TODO(ofekp): This should be test_df and dataset_test
+                img_idx = 1
+                self.visualize.show_prediction_on_img(self.model, self.dataset_test, self.test_df, img_idx, self.is_colab, show_groud_truth=False, box_threshold=self.config.box_threshold, split_segments=True)  # TODO(ofekp): This should be test_df and dataset_test
                 # evaluate on the test dataset
                 engine.evaluate(self.model, data_loader_test, device=self.device)
                 
@@ -585,29 +514,13 @@ class Trainer:
             logger.write(f'{message}\n')
 
     def train(self):
-        # use our dataset and defined transformations
-        if self.config.h5py_dataset:
-            h5_reader = imat_dataset.DatasetH5Reader("../imaterialist_" + str(self.target_dim) + ".hdf5")
-            dataset = imat_dataset.IMATDatasetH5PY(h5_reader, T.get_transform(train=True))
-            h5_reader_test = imat_dataset.DatasetH5Reader("../imaterialist_test_" + str(self.target_dim) + ".hdf5")
-            dataset_test = imat_dataset.IMATDatasetH5PY(h5_reader_test, T.get_transform(train=False))
-        else:
-            dataset = imat_dataset.IMATDataset(main_folder_path, self.train_df, self.num_classes, self.target_dim, T.get_transform(train=True))
-            dataset_test = imat_dataset.IMATDataset(main_folder_path, self.test_df, self.num_classes, self.target_dim, T.get_transform(train=False))
-        
-        # TODO(ofekp): do we need this?
-        # split the dataset in train and test set
-        # indices = torch.randperm(len(dataset)).tolist()
-        # dataset = torch.utils.data.Subset(dataset, indices[:-50])
-        # dataset_test = torch.utils.data.Subset(dataset_test, indices[-50:])
-        
         # define training and validation data loaders
         data_loader = torch.utils.data.DataLoader(
-            dataset, batch_size=self.config.batch_size, shuffle=True, num_workers=self.config.num_workers,
+            self.dataset, batch_size=self.config.batch_size, shuffle=True, num_workers=self.config.num_workers,
             collate_fn=utils.collate_fn)
 
         data_loader_test = torch.utils.data.DataLoader(
-            dataset_test, batch_size=self.config.batch_size, shuffle=False, num_workers=self.config.num_workers,
+            self.dataset_test, batch_size=self.config.batch_size, shuffle=False, num_workers=self.config.num_workers,
             collate_fn=utils.collate_fn)
 
         for _ in range(self.config.num_epochs):
@@ -626,63 +539,70 @@ class Trainer:
             self.scheduler.step(metric_logger.__getattr__('loss').avg)
             torch.cuda.empty_cache()  # TODO(ofekp): trying to avoid GPU memory usage increase, check that this works
 
-            self.save_model(dataset_test)
-            self.eval_model(data_loader_test, dataset_test)
+            self.save_model()
+            self.eval_model(data_loader_test)
             
             self.log("Epoch [{}/{}]".format(self.epoch + 1, self.config.num_epochs))
             self.epoch += 1
 
         self.log("Saving model one last time")
-        self.save_model(dataset_test)
-        self.eval_model(data_loader_test, dataset_test)
+        self.save_model()
+        self.eval_model(data_loader_test)
         self.log("That's it!")
 
         
 class TrainConfig:
-    if args.add_user_name_to_model_file:
-        model_name_suffix = os.getlogin() + "_" + args.model_file_suffix
-    else:
-        model_name_suffix = args.model_file_suffix
-    h5py_dataset = args.h5py_dataset
-    verbose = True
-    save_every = args.save_every
-    eval_every = args.eval_every
-    box_threshold = args.box_threshold
-    # TODO(ofekp): check if we need box_threshold_train = 0.1
-    gradient_accumulation_steps = args.gradient_accumulation_steps
-    batch_size = args.batch_size
-    num_workers = args.num_workers
-    num_epochs = args.num_epochs
-    
-    # optimizer = torch.optim.SGD(params, lr=0.01, momentum=0.9, weight_decay=0.00005)
-    # lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.5)
-    optimizer_class = torch.optim.AdamW
-    optimizer_config = dict(
-        lr=args.lr,
-        weight_decay=args.weight_decay
-    )
-    
-    scheduler_class = torch.optim.lr_scheduler.ReduceLROnPlateau
-    scheduler_config = dict(
-        mode='min',
-        factor=args.sched_factor,
-        patience=args.sched_patience,
-        verbose=False, 
-        threshold=args.sched_threshold,
-        threshold_mode='abs',
-        cooldown=0, 
-        min_lr=args.sched_min_lr,
-        eps=args.sched_eps
-    )
+    def __init__(self, args):
+        if args.add_user_name_to_model_file:
+            self.model_file_suffix = os.getlogin() + "_" + args.model_file_suffix
+        else:
+            self.model_file_suffix = args.model_file_suffix
+        self.h5py_dataset = args.h5py_dataset
+        self.verbose = True
+        self.save_every = args.save_every
+        self.eval_every = args.eval_every
+        self.box_threshold = args.box_threshold
+        # TODO(ofekp): check if we need box_threshold_train = 0.1
+        self.gradient_accumulation_steps = args.gradient_accumulation_steps
+        self.batch_size = args.batch_size
+        self.num_workers = args.num_workers
+        self.num_epochs = args.num_epochs
+        
+        # optimizer = torch.optim.SGD(params, lr=0.01, momentum=0.9, weight_decay=0.00005)
+        # lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.5)
+        self.optimizer_class = torch.optim.AdamW
+        self.optimizer_config = dict(
+            lr=args.lr,
+            weight_decay=args.weight_decay
+        )
+        
+        self.scheduler_class = torch.optim.lr_scheduler.ReduceLROnPlateau
+        self.scheduler_config = dict(
+            mode='min',
+            factor=args.sched_factor,
+            patience=args.sched_patience,
+            verbose=False, 
+            threshold=args.sched_threshold,
+            threshold_mode='abs',
+            cooldown=0, 
+            min_lr=args.sched_min_lr,
+            eps=args.sched_eps
+        )
 
 
 def main():
-    ars, args_text = parse_args()
+    args, args_text = parse_args()
 
-    num_classes, train_df, test_df, categories_df = process_data(args.data_limit)
-    print("Setting target_dim to [{}]".format(args.target_dim))
+    main_folder_path = "../"
+
+    if not os.path.exists("Args"):
+        os.mkdir("Args")
+    with open("Args/args_text.yml", 'w') as args_file:
+        args_file.write(args_text)
 
     # device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
+    isTPU = False
+    forceCPU = False
     if isTPU:
         device = xm.xla_device()
     elif forceCPU:
@@ -693,20 +613,26 @@ def main():
     if device == 'cuda:0':
         print("Device description [{}]".format(torch.cuda.get_device_name(0)))
 
+    
+    num_classes, train_df, test_df, categories_df = process_data(main_folder_path, args.data_limit)
+    print("Setting target_dim to [{}]".format(args.target_dim))
+
     # model = get_model_instance_segmentation(num_classes)
-    model = get_model_instance_segmentation_efficientnet(num_classes, freeze_batch_norm=True)
+    model = get_model_instance_segmentation_efficientnet(num_classes, args.target_dim, freeze_batch_norm=args.freeze_batch_norm_weights)
 
     # get the model using our helper function
-    trainer = Trainer(model, train_df, test_df, num_classes, args.target_dim, categories_df, device, config=TrainConfig)
+    train_config = TrainConfig(args)
+    trainer = Trainer(main_folder_path, model, train_df, test_df, args.data_limit, num_classes, args.target_dim, categories_df, device, is_colab, config=train_config)
 
     # load a saved model
     if args.load_model:
-        trainer.load_model(device)
+        if not trainer.load_model(device):
+            exit(1)
 
     if args.train:
-        print_nvidia_smi()
+        print_nvidia_smi(device)
         model.to(device)
-        print_nvidia_smi()
+        print_nvidia_smi(device)
         trainer.train()
 
 

@@ -9,11 +9,12 @@ from PIL import Image
 import common
 
 class IMATDataset(BaseDataset):
-    def __init__(self, main_folder_path, data_df, num_classes, target_dim, transforms=None, gather_statistics=True):
+    def __init__(self, main_folder_path, data_df, num_classes, target_dim, is_colab, transforms=None, gather_statistics=True):
         self.main_folder_path = main_folder_path
         self.data_df = data_df
         self.num_classes = num_classes
         self.target_dim = target_dim
+        self.is_colab = is_colab
         self.transforms = transforms
         self.image_ids = data_df['ImageId'].unique()
         # TODO: indices = torch.randperm(len(dataset)).tolist()
@@ -43,12 +44,12 @@ class IMATDataset(BaseDataset):
         avg_transform_time = 0 if images_processed == 0 else self.total_transform_time.value / images_processed
         avg_mask_time = 0 if images_processed == 0 else self.total_mask_time.value / images_processed
         avg_box_time = 0 if images_processed == 0 else self.total_box_time.value / images_processed
-        print("Processed [{}] images in [{}] seconds."
-              "Avg of [{}] per image."
-              "Avg image load time [{}]"
-              "Avg transform time [{}]"
-              "Avg mask time [{}]"
-              "Avg box time [{}]"
+        print("Processed [{}] images in [{}] seconds"
+              " Avg per image [{}]"
+              " Avg image load time [{}]"
+              " Avg transform time [{}]"
+              " Avg mask time [{}]"
+              " Avg box time [{}]"
               .format(
             images_processed,
             total_process_time,
@@ -113,7 +114,7 @@ class IMATDataset(BaseDataset):
 #         target["iscrowd"] = torch.tensor(iscrowd)
 
         image_load_start_ts = time.time()
-        image_orig = Image.open(common.get_image_path(main_folder_path, image_id)).convert("RGB")
+        image_orig = Image.open(common.get_image_path(self.main_folder_path, image_id, self.is_colab)).convert("RGB")
         image = helpers.rescale(image_orig, target_dim=self.target_dim)
         if self.gather_statistics:
             self.inc_by(self.lock, self.total_image_load_time, time.time() - image_load_start_ts)
@@ -192,8 +193,8 @@ class IMATDatasetH5PY(BaseDataset):
         images_processed = self.images_processed.value
         total_process_time = self.total_process_time.value
         avg_time_per_image = 0 if images_processed == 0 else total_process_time / images_processed
-        print("Processed [{}] images in [{}] seconds."
-              "Avg of [{}] per image."
+        print("Processed [{}] images in [{}] seconds"
+              " Avg per image [{}]"
               .format(
             images_processed,
             total_process_time,
@@ -213,7 +214,6 @@ class IMATDatasetH5PY(BaseDataset):
         target["labels"] = torch.from_numpy(labels)
         assert torch.min(target["labels"]) >= 1
         assert torch.max(target["labels"]) <= self.num_classes
-#         target["labels"] = torch.sub(target["labels"], 1)  # TODO(ofekp): just a try
         
         num_objs = target["labels"].shape[0]
         target["masks"] = torch.from_numpy(masks[0:num_objs]).type(torch.uint8)

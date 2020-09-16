@@ -45,8 +45,6 @@ import train
 import yaml
 
 
-main_folder_path = '../'
-
 parser = argparse.ArgumentParser(description='Training Config')
 
 parser.add_argument('--chunk-size', type=int, default=20, metavar='CHUNK_SIZE',
@@ -78,20 +76,34 @@ class DatasetH5Writer(torch.utils.data.Dataset):
         self.file_name = out_file
         self.cpu_count = multiprocessing.cpu_count()
         self.delete_existing = delete_existing
+        requires_init = False
         if os.path.exists(self.file_name):
             if self.delete_existing:
                 os.remove(self.file_name)
+                requires_init
+        else:
+            requires_init
+        
         self.h5py_file = h5py.File(self.file_name, "a")
-        self.image_ids_data_set = self.h5py_file.create_dataset("image_ids", shape=(0,), dtype=np.uint64, maxshape=(None,), chunks=(self.chunk_size,))
-        self.images_data_set = self.h5py_file.create_dataset("images", shape=(0,3,self.target_dim,self.target_dim), dtype=np.float64, maxshape=(None,3,self.target_dim,self.target_dim), chunks=(self.chunk_size,3,self.target_dim,self.target_dim))
-        dt = h5py.vlen_dtype(np.dtype('int64'))
-        self.labels_data_set = self.h5py_file.create_dataset("labels", shape=(0,), maxshape=(None,), dtype=dt, chunks=(self.chunk_size,))
-        self.masks_data_set = self.h5py_file.create_dataset("masks", shape=(0,75,self.target_dim,self.target_dim), maxshape=(None,75,512,512), dtype=np.uint8, chunks=(self.chunk_size,75,self.target_dim,self.target_dim))
-        self.boxes_data_set = self.h5py_file.create_dataset("boxes", shape=(0,75,4), maxshape=(None,75,4), dtype=np.float64, chunks=(self.chunk_size,75,4))
+        if requires_init:
+            self.image_ids_data_set = self.h5py_file.create_dataset("image_ids", shape=(0,), dtype=np.uint64, maxshape=(None,), chunks=(self.chunk_size,))
+            self.images_data_set = self.h5py_file.create_dataset("images", shape=(0,3,self.target_dim,self.target_dim), dtype=np.float64, maxshape=(None,3,self.target_dim,self.target_dim), chunks=(self.chunk_size,3,self.target_dim,self.target_dim))
+            dt = h5py.vlen_dtype(np.dtype('int64'))
+            self.labels_data_set = self.h5py_file.create_dataset("labels", shape=(0,), maxshape=(None,), dtype=dt, chunks=(self.chunk_size,))
+            self.masks_data_set = self.h5py_file.create_dataset("masks", shape=(0,75,self.target_dim,self.target_dim), maxshape=(None,75,512,512), dtype=np.uint8, chunks=(self.chunk_size,75,self.target_dim,self.target_dim))
+            self.boxes_data_set = self.h5py_file.create_dataset("boxes", shape=(0,75,4), maxshape=(None,75,4), dtype=np.float64, chunks=(self.chunk_size,75,4))
+        else:
+            self.image_ids_data_set = self.h5py_file['image_ids']
+            self.images_data_set = self.h5py_file['images']
+            self.labels_data_set = self.h5py_file['labels']
+            self.masks_data_set = self.h5py_file['masks']
+            self.boxes_data_set = self.h5py_file['boxes']
 
         self.start_idx = self.images_data_set.shape[0]
-        if self.start_idx is not 0:
-            assert target_dim == self.images_data_set.shape[-3]
+        if self.start_idx != 0:
+            assert self.target_dim == self.images_data_set.shape[-2]
+
+        assert self.start_idx not in self.image_ids_data_set
 
     def append_to_h5py(self, result):
         chunk_size, images_np, image_ids_np, labels_numpy_list, masks_numpy_fixed_size, boxes_numpy_fixed_size = result
@@ -167,28 +179,29 @@ class DatasetH5Writer(torch.utils.data.Dataset):
                 boxes_numpy_fixed_size[i, j, :] = box
         return (curr_chunk_size, images_numpy, image_ids_numpy, labels_numpy_list, masks_numpy_fixed_size, boxes_numpy_fixed_size)
 
-    def process(self):
+    def process(self, debug=False):
         print("CPU count is [{}]".format(self.cpu_count))
         print("Started writing [{}]...".format(self.file_name))
         pool = multiprocessing.Pool(self.cpu_count - 1)
         queue = multiprocessing.Queue()
         idx = self.start_idx
-#         results = []
+        results = []
         count_chunks = 0
         while idx < self.dataset_len:
-            pool.apply_async(DatasetH5Writer.process_chunk, (self.dataset, idx, self.chunk_size, self.target_dim), callback=queue.put)
+            res = pool.apply_async(DatasetH5Writer.process_chunk, (self.dataset, idx, self.chunk_size, self.target_dim), callback=queue.put)
             idx += self.chunk_size
             count_chunks += 1
-#             results.append(res)
-# #         rrrr = [t.get() for t in results]
-#         for res in results:
-#             res.wait()
-#             print(res)
-#             print(res.get())
+            if debug:
+                results.append(res)
+        if debug:
+            for res in results:
+                res.wait()
+                print(res)
+                print(res.get())
         pool.close()
     
         count_chunks_done = 0
-        while True:
+        while count_chunks > 0 and True:
             if not queue.empty():
                 print("Approx. queue size [{}]".format(queue.qsize()))
                 count_chunks_done += 1
@@ -198,7 +211,7 @@ class DatasetH5Writer(torch.utils.data.Dataset):
                     break
                     
         pool.join()
-        assert len(self.image_ids_data_set) == len(self.image_ids_data_set.unique()), "Some index was written twice"
+        assert len(self.image_ids_data_set) == len(np.unique(self.image_ids_data_set)), "Some index was written twice"
         print("File [{}] completed.".format(self.file_name))
             
     def close(self):
@@ -209,14 +222,16 @@ def main():
     args, args_text = parse_args()
     print("Args: {}".format(args_text))
 
-    num_classes, train_df, test_df, categories_df = train.process_data(args.data_limit)
+    main_folder_path = '../'
+    num_classes, train_df, test_df, categories_df = train.process_data(main_folder_path, args.data_limit)
 
-    dataset_test = imat_dataset.IMATDataset(main_folder_path, test_df, num_classes, args.target_dim, T.get_transform(train=False), gather_statistics=False)
+    dataset_test = imat_dataset.IMATDataset(main_folder_path, test_df, num_classes, args.target_dim, False, T.get_transform(train=False), gather_statistics=False)
     h5_test_writer = DatasetH5Writer(dataset_test, args.target_dim, "../imaterialist_test_" + str(args.target_dim) + ".hdf5", chunk_size=args.chunk_size, delete_existing=args.delete_existing)
     h5_test_writer.process()
     h5_test_writer.close()
 
-    dataset = imat_dataset.IMATDataset(main_folder_path, train_df, num_classes, args.target_dim, T.get_transform(train=False), gather_statistics=False)
+
+    dataset = imat_dataset.IMATDataset(main_folder_path, train_df, num_classes, args.target_dim, False, T.get_transform(train=False), gather_statistics=False)
     h5_writer = DatasetH5Writer(dataset, args.target_dim, "../imaterialist_" + str(args.target_dim) + ".hdf5", chunk_size=args.chunk_size, delete_existing=args.delete_existing)
     h5_writer.process()
     h5_writer.close()

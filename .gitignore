@@ -4,6 +4,8 @@ old_versions
 torchvision_lib
 Model
 Log
+Args
+Images
 
 # Jupyter Notebook
 .ipynb_checkpoints
