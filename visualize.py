@@ -96,20 +96,23 @@ class Visualize:
         else:
             num_segments = len(masks)
             fig, ax = plt.subplots(nrows=1, ncols=(num_segments+2), figsize=figsize)
-            ax[0].imshow(img.permute(1, 2, 0))
-            ax[0].axis('off')
-            for i, (curr_mask, class_id) in enumerate(zip(masks, class_ids)):
+            i = 0
+            ax[i].imshow(img.permute(1, 2, 0))
+            ax[i].axis('off')
+            i += 1
+            for curr_mask, class_id in zip(masks, class_ids):
                 curr_mask = curr_mask.cpu()
                 class_id = class_id.cpu()
                 assert torch.min(curr_mask) >= 0.0
                 assert torch.max(curr_mask) <= 1.0
                 curr_mask = curr_mask.type(torch.FloatTensor)
-                ax[1+i].imshow(img.permute(1, 2, 0))
-                ax[1+i].imshow(curr_mask, alpha=0.7)
-                ax[1+i].axis('off')
-            ax[2+i].imshow(img.permute(1, 2, 0))
-            ax[2+i].imshow(image_with_bb)
-            ax[2+i].axis('off')
+                ax[i].imshow(img.permute(1, 2, 0))
+                ax[i].imshow(curr_mask, alpha=0.7)
+                ax[i].axis('off')
+                i += 1
+            ax[i].imshow(img.permute(1, 2, 0))
+            ax[i].imshow(image_with_bb)
+            ax[i].axis('off')
 
         if self.dest_folder is None:
             plt.show()
@@ -129,7 +132,12 @@ class Visualize:
         # put the model in evaluation mode
         with torch.no_grad():
             device = next(model.parameters()).device
-            prediction = model([img.to(device)], box_threshold=box_threshold)
+            if box_threshold is not None:
+                print(box_threshold)
+                prediction = model([img.to(device)], box_threshold=box_threshold)
+            else:
+                # case of faster rcnn model
+                prediction = model([img.to(device)])
 
         # class_ids, masks, boxes = helpers.remove_empty_masks(class_ids, masks, boxes)
         boxes = prediction[0]['boxes']

@@ -53,6 +53,7 @@ import effdet
 from effdet import BiFpn, DetBenchTrain, EfficientDet, load_pretrained, load_pretrained, HeadNet
 import subprocess
 import sys
+from ipywidgets import FloatProgress
 import functools
 print = functools.partial(print, flush=True)
 
@@ -93,6 +94,8 @@ def str2bool(v):
         raise argparse.ArgumentTypeError('Boolean value expected but got [{}].'.format(v))
 
 # training params
+parser.add_argument('--model-name', type=str, default='effdet', metavar='MODEL_NAME',
+                    help='The name of the model to use [effdet|faster] (default=effdet)')
 parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
                     help='learning rate (default: 0.01)')    # TODO(ofekp): was lr=0.005
 parser.add_argument('--weight-decay', type=float, default=0.00005, metavar='WEIGHT_DECAY',
@@ -105,7 +108,7 @@ parser.add_argument('--num-workers', type=int, default=4, metavar='NUM_WORKERS',
                     help='number of workers for the dataloader (default: 4)')
 parser.add_argument('--num-epochs', type=int, default=150, metavar='NUM_EPOCHS',
                     help='number of epochs (default: 150)')
-parser.add_argument('--model-file-suffix', type=str, default='effdet_h5py_rpn', metavar='SUFFIX',  # TODO(ofekp): default should be empty string?
+parser.add_argument('--model-file-suffix', type=str, default='faster_rcnn', metavar='SUFFIX',  # TODO(ofekp): change back to 'effdet_h5py_rpn', default should be empty string?
                     help='Suffix to identify the model file that is saved during training (default=effdet_h5py_rpn)')
 parser.add_argument('--add-user-name-to-model-file', type=str2bool, default=True, metavar='BOOL',
                     help='Will add the user name to the model file that is saved during training (default=True)')
@@ -270,7 +273,12 @@ def freeze_bn(model):
     
 
 def get_model_instance_segmentation(num_classes):
-    from ipywidgets import FloatProgress
+    '''
+    Note that to use this model you must install regular pytorch package (instead of from ofekp branch)
+    The correct way to install torchvision will be:
+        pip install torchvision==0.7.0+cu101 -f https://download.pytorch.org/whl/torch_stable.html
+    '''
+    print("Using Faster-RCNN detection model")
     # load an instance segmentation model pre-trained pre-trained on COCO
     model = torchvision.models.detection.maskrcnn_resnet50_fpn(pretrained=True)
 
@@ -330,6 +338,7 @@ class BackboneWithCustomFPN(nn.Module):
 
 
 def get_model_instance_segmentation_efficientnet(num_classes, target_dim, freeze_batch_norm=False):
+    print("Using EffDet detection model")
     # let's make the RPN generate 5 x 3 anchors per spatial
     # location, with 5 different sizes and 3 different aspect
     # ratios. We have a Tuple[Tuple[int]] because each feature
@@ -426,12 +435,12 @@ class Trainer:
         # use our dataset and defined transformations
         if self.config.h5py_dataset:
             h5_reader = imat_dataset.DatasetH5Reader("../imaterialist_" + str(self.target_dim) + ".hdf5")
-            self.dataset = imat_dataset.IMATDatasetH5PY(h5_reader, self.num_classes, self.target_dim, T.get_transform(train=True))
+            self.dataset = imat_dataset.IMATDatasetH5PY(h5_reader, self.num_classes, self.target_dim, self.config.model_name, T.get_transform(train=True))
             h5_reader_test = imat_dataset.DatasetH5Reader("../imaterialist_test_" + str(self.target_dim) + ".hdf5")
-            self.dataset_test = imat_dataset.IMATDatasetH5PY(h5_reader_test, self.num_classes, self.target_dim, T.get_transform(train=False))
+            self.dataset_test = imat_dataset.IMATDatasetH5PY(h5_reader_test, self.num_classes, self.target_dim, self.config.model_name, T.get_transform(train=False))
         else:
-            self.dataset = imat_dataset.IMATDataset(self.main_folder_path, self.train_df, self.num_classes, self.target_dim, False, T.get_transform(train=True))
-            self.dataset_test = imat_dataset.IMATDataset(self.main_folder_path, self.test_df, self.num_classes, self.target_dim, False, T.get_transform(train=False))
+            self.dataset = imat_dataset.IMATDataset(self.main_folder_path, self.train_df, self.num_classes, self.target_dim, self.config.model_name, False, T.get_transform(train=True))
+            self.dataset_test = imat_dataset.IMATDataset(self.main_folder_path, self.test_df, self.num_classes, self.target_dim, self.config.model_name, False, T.get_transform(train=False))
         
         # TODO(ofekp): do we need this?
         # split the dataset in train and test set
@@ -512,10 +521,13 @@ class Trainer:
         if (self.epoch) % self.config.eval_every == 0:
             self.model.eval()
             with torch.no_grad():
-                img_idx = 1
+                img_idx = 2
                 self.visualize.show_prediction_on_img(self.model, self.dataset_test, self.test_df, img_idx, self.is_colab, show_groud_truth=False, box_threshold=self.config.box_threshold, split_segments=True)  # TODO(ofekp): This should be test_df and dataset_test
                 # evaluate on the test dataset
-                engine.evaluate(self.model, data_loader_test, device=self.device)
+                if "effdet" in self.config.model_name:
+                    engine.evaluate(self.model, data_loader_test, device=self.device)
+                else:
+                    engine.evaluate(self.model, data_loader_test, device=self.device, box_threshold=None)
                 
     def log(self, message):
         if self.config.verbose:
@@ -571,12 +583,13 @@ class TrainConfig:
         self.verbose = True
         self.save_every = args.save_every
         self.eval_every = args.eval_every
-        self.box_threshold = args.box_threshold
-        # TODO(ofekp): check if we need box_threshold_train = 0.1
         self.gradient_accumulation_steps = args.gradient_accumulation_steps
         self.batch_size = args.batch_size
         self.num_workers = args.num_workers
         self.num_epochs = args.num_epochs
+        self.model_name = args.model_name
+        self.box_threshold = args.box_threshold
+        # TODO(ofekp): check if we need box_threshold_train = 0.1
         
         # optimizer = torch.optim.SGD(params, lr=0.01, momentum=0.9, weight_decay=0.00005)
         # lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.5)
@@ -604,14 +617,20 @@ def main():
     args, args_text = parse_args()
 
     main_folder_path = "../"
+        
+    if "effdet" not in args.model_name:
+        # case of faster rcnn model
+        args.box_threshold = None
 
     if not os.path.exists("Args"):
         os.mkdir("Args")
     with open("Args/args_text.yml", 'w') as args_file:
         args_file.write(args_text)
 
-    os.remove("./Log/20200916.log")
-    log_file = open("./Log/20200916.log", "w")
+    log_file_path = "./Log/20200918.log"
+    if os.path.exists(log_file_path):
+        os.remove(log_file_path)
+    log_file = open("./Log/20200918.log", "w")
     old_stdout = sys.stdout
     sys.stdout = log_file
 
@@ -631,8 +650,10 @@ def main():
     num_classes, train_df, test_df, categories_df = process_data(main_folder_path, args.data_limit)
     print("Setting target_dim to [{}]".format(args.target_dim))
 
-    # model = get_model_instance_segmentation(num_classes)
-    model = get_model_instance_segmentation_efficientnet(num_classes, args.target_dim, freeze_batch_norm=args.freeze_batch_norm_weights)
+    if "effdet" in args.model_name:
+        model = get_model_instance_segmentation_efficientnet(num_classes, args.target_dim, freeze_batch_norm=args.freeze_batch_norm_weights)
+    else:
+        model = get_model_instance_segmentation(num_classes)
 
     # get the model using our helper function
     train_config = TrainConfig(args)

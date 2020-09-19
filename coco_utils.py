@@ -143,7 +143,7 @@ def _coco_remove_images_without_annotations(dataset, cat_list=None):
     return dataset
 
 
-def convert_to_coco_api(ds):
+def convert_to_coco_api(ds, box_threshold):
     coco_ds = COCO()
     # annotation IDs need to start at 1, not 0, see torchvision issue #1530
     ann_id = 1
@@ -162,7 +162,10 @@ def convert_to_coco_api(ds):
         bboxes = targets["boxes"]
         bboxes[:, 2:] -= bboxes[:, :2]
         bboxes = bboxes.tolist()
-        labels = torch.sub(targets['labels'], 1).tolist()  # TODO(ofekp): used to be just 'targets['labels'].tolist()', subtracting one since in the dataset we added one for effdet training
+        if box_threshold == None:
+            labels = targets['labels'].tolist()
+        else:
+            labels = torch.sub(targets['labels'], 1).tolist()  # TODO(ofekp): used to be just 'targets['labels'].tolist()', substracting one since in the dataset we added one for effdet training
         areas = targets['area'].tolist()
         iscrowd = targets['iscrowd'].tolist()
         if 'masks' in targets:
@@ -195,7 +198,7 @@ def convert_to_coco_api(ds):
     return coco_ds
 
 
-def get_coco_api_from_dataset(dataset):
+def get_coco_api_from_dataset(dataset, box_threshold):
     for _ in range(10):
         if isinstance(dataset, torchvision.datasets.CocoDetection):
             break
@@ -203,7 +206,7 @@ def get_coco_api_from_dataset(dataset):
             dataset = dataset.dataset
     if isinstance(dataset, torchvision.datasets.CocoDetection):
         return dataset.coco
-    return convert_to_coco_api(dataset)
+    return convert_to_coco_api(dataset, box_threshold)
 
 
 class CocoDetection(torchvision.datasets.CocoDetection):

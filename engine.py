@@ -31,7 +31,10 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, gradient_accum
         images = list(image.to(device) for image in images)
         targets = [{k: v.to(device) if torch.is_tensor(v) else v for k, v in t.items()} for t in targets]
 
-        loss_dict = model(images, box_threshold, targets)
+        if box_threshold == None:
+            loss_dict = model(images, targets)
+        else:
+            loss_dict = model(images, box_threshold, targets)
 
         # print(loss_dict)
         losses = sum(loss / gradient_accumulation_steps for loss in loss_dict.values())  # gradient_accumulation
@@ -89,7 +92,7 @@ def evaluate(model, data_loader, device, box_threshold=0.001):
     metric_logger = utils.MetricLogger(delimiter="  ")
     header = 'Test:'
 
-    coco = get_coco_api_from_dataset(data_loader.dataset)
+    coco = get_coco_api_from_dataset(data_loader.dataset, box_threshold)
     iou_types = _get_iou_types(model)
     coco_evaluator = CocoEvaluator(coco, iou_types)
 
@@ -99,7 +102,10 @@ def evaluate(model, data_loader, device, box_threshold=0.001):
 
         torch.cuda.synchronize()
         model_time = time.time()
-        outputs = model(images, box_threshold)
+        if box_threshold is None:
+            outputs = model(images)
+        else:
+            outputs = model(images, box_threshold)
 
         # print(targets)
         # print(outputs)

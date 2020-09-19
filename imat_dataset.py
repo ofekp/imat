@@ -9,13 +9,14 @@ from PIL import Image
 import common
 
 class IMATDataset(BaseDataset):
-    def __init__(self, main_folder_path, data_df, num_classes, target_dim, is_colab, transforms=None, gather_statistics=True):
+    def __init__(self, main_folder_path, data_df, num_classes, target_dim, model_name, is_colab, transforms=None, gather_statistics=True):
         self.main_folder_path = main_folder_path
         self.data_df = data_df
         self.num_classes = num_classes
         self.target_dim = target_dim
         self.is_colab = is_colab
         self.transforms = transforms
+        self.model_name = model_name
         self.image_ids = data_df['ImageId'].unique()
         # TODO: indices = torch.randperm(len(dataset)).tolist()
         self.skipped_images = []
@@ -101,9 +102,15 @@ class IMATDataset(BaseDataset):
         labels, masks, boxes = helpers.remove_empty_masks(labels, masks, boxes)
 
         target = {}
-        target["labels"] = torch.add(labels, 1)  # refer to fast_collate, this is needed for efficient det
-        assert torch.min(target["labels"]) >= 1
-        assert torch.max(target["labels"]) <= self.num_classes
+        if "effdet" in self.model_name:
+            # we only need the correction for the modified model
+            target["labels"] = torch.add(labels, 1)  # refer to fast_collate, this is needed for efficient det
+            assert torch.min(target["labels"]) >= 1
+            assert torch.max(target["labels"]) <= self.num_classes - 1
+        else:
+            target["labels"] = labels
+            assert torch.min(target["labels"]) >= 0
+            assert torch.max(target["labels"]) <= self.num_classes - 1
         target["masks"] = masks
         target["boxes"] = boxes
         target["image_id"] = image_id_idx
@@ -172,10 +179,11 @@ class DatasetH5Reader(torch.utils.data.Dataset):
 
 
 class IMATDatasetH5PY(BaseDataset):
-    def __init__(self, dataset_h5py_reader, num_classes, target_dim, transforms=None):
+    def __init__(self, dataset_h5py_reader, num_classes, target_dim, model_name, transforms=None):
         self.transforms = transforms
         self.num_classes = num_classes
         self.target_dim = target_dim
+        self.model_name = model_name
         self.lock = Lock()
         self.dataset_h5py_reader = dataset_h5py_reader
         self.images_processed = Value('i', 0)
@@ -214,6 +222,9 @@ class IMATDatasetH5PY(BaseDataset):
         target["labels"] = torch.from_numpy(labels)
         assert torch.min(target["labels"]) >= 1
         assert torch.max(target["labels"]) <= self.num_classes
+        if "effdet" not in self.model_name:
+            # in case of the conventional model, we need to have the classes start from 0
+            target["labels"] = torch.sub(target["labels"], 1)
         
         num_objs = target["labels"].shape[0]
         target["masks"] = torch.from_numpy(masks[0:num_objs]).type(torch.uint8)
@@ -240,4 +251,5 @@ class IMATDatasetH5PY(BaseDataset):
         
 
     def __len__(self):
+        # return 50
         return self.dataset_h5py_reader.__len__()
