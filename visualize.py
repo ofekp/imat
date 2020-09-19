@@ -133,7 +133,6 @@ class Visualize:
         with torch.no_grad():
             device = next(model.parameters()).device
             if box_threshold is not None:
-                print(box_threshold)
                 prediction = model([img.to(device)], box_threshold=box_threshold)
             else:
                 # case of faster rcnn model

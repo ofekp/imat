@@ -8,6 +8,7 @@ from torch.utils.data import Dataset as BaseDataset
 from PIL import Image
 import common
 
+
 class IMATDataset(BaseDataset):
     def __init__(self, main_folder_path, data_df, num_classes, target_dim, model_name, is_colab, transforms=None, gather_statistics=True):
         self.main_folder_path = main_folder_path
@@ -106,7 +107,7 @@ class IMATDataset(BaseDataset):
             # we only need the correction for the modified model
             target["labels"] = torch.add(labels, 1)  # refer to fast_collate, this is needed for efficient det
             assert torch.min(target["labels"]) >= 1
-            assert torch.max(target["labels"]) <= self.num_classes - 1
+            assert torch.max(target["labels"]) <= self.num_classes
         else:
             target["labels"] = labels
             assert torch.min(target["labels"]) >= 0
@@ -251,5 +252,8 @@ class IMATDatasetH5PY(BaseDataset):
         
 
     def __len__(self):
-        # return 50
+        # if self.transforms is not None and len(self.transforms) > 0:
+        #     return 1600
+        # else:
+        #     return 400
         return self.dataset_h5py_reader.__len__()

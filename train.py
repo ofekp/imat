@@ -108,7 +108,7 @@ parser.add_argument('--num-workers', type=int, default=4, metavar='NUM_WORKERS',
                     help='number of workers for the dataloader (default: 4)')
 parser.add_argument('--num-epochs', type=int, default=150, metavar='NUM_EPOCHS',
                     help='number of epochs (default: 150)')
-parser.add_argument('--model-file-suffix', type=str, default='faster_rcnn', metavar='SUFFIX',  # TODO(ofekp): change back to 'effdet_h5py_rpn', default should be empty string?
+parser.add_argument('--model-file-suffix', type=str, default='effdet_h5py_rpn', metavar='SUFFIX',  # TODO(ofekp): default should be empty string?
                     help='Suffix to identify the model file that is saved during training (default=effdet_h5py_rpn)')
 parser.add_argument('--add-user-name-to-model-file', type=str2bool, default=True, metavar='BOOL',
                     help='Will add the user name to the model file that is saved during training (default=True)')
@@ -425,7 +425,10 @@ class Trainer:
         self.target_dim = target_dim
         self.is_colab = is_colab
         self.data_limit = data_limit
-        self.optimizer = self.config.optimizer_class(self.model.parameters(), **self.config.optimizer_config)
+        # TODO(ofekp): faster - should just use self.model.parameters()
+        params = [p for p in self.model.parameters() if p.requires_grad]
+        self.optimizer = self.config.optimizer_class(params, **self.config.optimizer_config)
+        # self.optimizer = self.config.optimizer_class(self.model.parameters(), **self.config.optimizer_config)
         self.scheduler = self.config.scheduler_class(self.optimizer, **self.config.scheduler_config)
         self.model_file_path = self.get_model_file_path(is_colab, suffix=config.model_file_suffix)
         self.log_file_path = self.get_log_file_path(is_colab, suffix=config.model_file_suffix)
@@ -500,34 +503,32 @@ class Trainer:
         self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
 #         self.best_summary_loss = checkpoint['best_summary_loss']
         self.epoch = checkpoint['epoch'] + 1
-        self.log("Loaded model file [{}]".format(self.model_file_path))
+        self.log("Loaded model file [{}] trained epochs [{}]".format(self.model_file_path, checkpoint['epoch']))
         return True
         
     def save_model(self):
-        if (self.epoch) % self.config.save_every == 0:
-            self.model.eval()
-            torch.save({
-                'model_state_dict': self.model.state_dict(),
-                'optimizer_state_dict': self.optimizer.state_dict(),
-                'scheduler_state_dict': self.scheduler.state_dict(),
-    #             'best_summary_loss': self.best_summary_loss,
-                'epoch': self.epoch,
-            }, self.model_file_path)        
-            self.log('Saved model to [{}]'.format(self.model_file_path))
-            print_nvidia_smi(self.device)
-            self.dataset_test.show_stats()
+        self.model.eval()
+        torch.save({
+            'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'scheduler_state_dict': self.scheduler.state_dict(),
+#             'best_summary_loss': self.best_summary_loss,
+            'epoch': self.epoch,
+        }, self.model_file_path)        
+        self.log('Saved model to [{}]'.format(self.model_file_path))
+        print_nvidia_smi(self.device)
+        self.dataset_test.show_stats()
 
     def eval_model(self, data_loader_test):
-        if (self.epoch) % self.config.eval_every == 0:
-            self.model.eval()
-            with torch.no_grad():
-                img_idx = 2
-                self.visualize.show_prediction_on_img(self.model, self.dataset_test, self.test_df, img_idx, self.is_colab, show_groud_truth=False, box_threshold=self.config.box_threshold, split_segments=True)  # TODO(ofekp): This should be test_df and dataset_test
-                # evaluate on the test dataset
-                if "effdet" in self.config.model_name:
-                    engine.evaluate(self.model, data_loader_test, device=self.device)
-                else:
-                    engine.evaluate(self.model, data_loader_test, device=self.device, box_threshold=None)
+        self.model.eval()
+        with torch.no_grad():
+            img_idx = 2
+            self.visualize.show_prediction_on_img(self.model, self.dataset_test, self.test_df, img_idx, self.is_colab, show_groud_truth=False, box_threshold=self.config.box_threshold, split_segments=True)  # TODO(ofekp): This should be test_df and dataset_test
+            # evaluate on the test dataset
+            if "effdet" in self.config.model_name:
+                engine.evaluate(self.model, data_loader_test, device=self.device)
+            else:
+                engine.evaluate(self.model, data_loader_test, device=self.device, box_threshold=None)
                 
     def log(self, message):
         if self.config.verbose:
@@ -561,8 +562,11 @@ class Trainer:
             self.scheduler.step(metric_logger.__getattr__('loss').avg)
             torch.cuda.empty_cache()  # TODO(ofekp): trying to avoid GPU memory usage increase, check that this works
 
-            self.save_model()
-            self.eval_model(data_loader_test)
+            if (self.epoch) % self.config.save_every == 0:
+                self.save_model()
+            
+            if (self.epoch) % self.config.eval_every == 0:
+                self.eval_model(data_loader_test)
             
             self.log("Epoch [{}/{}]".format(self.epoch + 1, self.config.num_epochs))
             self.epoch += 1
@@ -593,6 +597,14 @@ class TrainConfig:
         
         # optimizer = torch.optim.SGD(params, lr=0.01, momentum=0.9, weight_decay=0.00005)
         # lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.5)
+        # self.optimizer_class = torch.optim.SGD
+        # self.optimizer_config = dict(
+        #     lr=args.lr,
+        #     momentum=0.9,
+        #     weight_decay=args.weight_decay
+        # )
+
+        # TODO(ofekp): faster - should use this
         self.optimizer_class = torch.optim.AdamW
         self.optimizer_config = dict(
             lr=args.lr,

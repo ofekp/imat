@@ -225,13 +225,12 @@ def main():
     main_folder_path = '../'
     num_classes, train_df, test_df, categories_df = train.process_data(main_folder_path, args.data_limit)
 
-    dataset_test = imat_dataset.IMATDataset(main_folder_path, test_df, num_classes, args.target_dim, False, T.get_transform(train=False), gather_statistics=False)
+    dataset_test = imat_dataset.IMATDataset(main_folder_path, test_df, num_classes, args.target_dim, "effdet", False, T.get_transform(train=False), gather_statistics=False)
     h5_test_writer = DatasetH5Writer(dataset_test, args.target_dim, "../imaterialist_test_" + str(args.target_dim) + ".hdf5", chunk_size=args.chunk_size, delete_existing=args.delete_existing)
     h5_test_writer.process()
     h5_test_writer.close()
 
-
-    dataset = imat_dataset.IMATDataset(main_folder_path, train_df, num_classes, args.target_dim, False, T.get_transform(train=False), gather_statistics=False)
+    dataset = imat_dataset.IMATDataset(main_folder_path, train_df, num_classes, args.target_dim, False, "effdet", T.get_transform(train=False), gather_statistics=False)
     h5_writer = DatasetH5Writer(dataset, args.target_dim, "../imaterialist_" + str(args.target_dim) + ".hdf5", chunk_size=args.chunk_size, delete_existing=args.delete_existing)
     h5_writer.process()
     h5_writer.close()

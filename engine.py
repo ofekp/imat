@@ -31,7 +31,7 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, gradient_accum
         images = list(image.to(device) for image in images)
         targets = [{k: v.to(device) if torch.is_tensor(v) else v for k, v in t.items()} for t in targets]
 
-        if box_threshold == None:
+        if box_threshold is None:
             loss_dict = model(images, targets)
         else:
             loss_dict = model(images, box_threshold, targets)

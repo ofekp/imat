@@ -24,6 +24,9 @@ class Compose(object):
             image, target = t(image, target)
         return image, target
 
+    def __len__(self):
+        return len(self.transforms)
+
 
 class RandomHorizontalFlip(object):
     def __init__(self, prob):
