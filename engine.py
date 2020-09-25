@@ -54,7 +54,7 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, gradient_accum
         losses.backward()
 
         # TODO(ofekp): grad clipping
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 10.0)
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 10.0)  # TODO: change back to 10.0
         
         # gradient_accumulation
         if steps % gradient_accumulation_steps == 0:

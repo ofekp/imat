@@ -126,7 +126,7 @@ parser.add_argument('--freeze-batch-norm-weights', type=str2bool, default=True, 
                     help='Freeze batch normalization weights (default=True)')
 
 # scheduler params
-parser.add_argument('--sched-factor', type=float, default=0.01, metavar='FACTOR',
+parser.add_argument('--sched-factor', type=float, default=0.5, metavar='FACTOR',
                     help='scheduler factor (default: 0.5)')
 parser.add_argument('--sched-patience', type=int, default=1, metavar='PATIENCE',
                     help='scheduler patience (default: 1)')
@@ -305,7 +305,7 @@ class EfficientDetBB(nn.Module):
     def forward(self, x):
         '''
         Originally EfficientDet also conatined the backbone and then fpn
-        but for the pupose of out network this had to be modified
+        but for the purpose of our network this had to be modified
         '''
         x_class = self.class_net(x)
         x_box = self.box_net(x)
@@ -366,7 +366,7 @@ def get_model_instance_segmentation_efficientnet(num_classes, target_dim, freeze
                 output_size=14,
                 sampling_ratio=2)
     
-    config = effdet.get_efficientdet_config('tf_efficientdet_d0')  # TODO(ofekp): use 'tf_efficientdet_d7' or try to decrease to smaller model so that we can fit 16 images in one batch
+    config = effdet.get_efficientdet_config('tf_efficientdet_d3')  # TODO(ofekp): use 'tf_efficientdet_d7' or try to decrease to smaller model so that we can fit 16 images in one batch
     efficientDetModelTemp = EfficientDet(config, pretrained_backbone=False)
     load_pretrained(efficientDetModelTemp, config.url)
     config.num_classes = num_classes
@@ -426,9 +426,9 @@ class Trainer:
         self.is_colab = is_colab
         self.data_limit = data_limit
         # TODO(ofekp): faster - should just use self.model.parameters()
-        params = [p for p in self.model.parameters() if p.requires_grad]
-        self.optimizer = self.config.optimizer_class(params, **self.config.optimizer_config)
-        # self.optimizer = self.config.optimizer_class(self.model.parameters(), **self.config.optimizer_config)
+        # params = [p for p in self.model.parameters() if p.requires_grad]
+        # self.optimizer = self.config.optimizer_class(params, **self.config.optimizer_config)
+        self.optimizer = self.config.optimizer_class(self.model.parameters(), **self.config.optimizer_config)
         self.scheduler = self.config.scheduler_class(self.optimizer, **self.config.scheduler_config)
         self.model_file_path = self.get_model_file_path(is_colab, suffix=config.model_file_suffix)
         self.log_file_path = self.get_log_file_path(is_colab, suffix=config.model_file_suffix)
@@ -639,10 +639,10 @@ def main():
     with open("Args/args_text.yml", 'w') as args_file:
         args_file.write(args_text)
 
-    log_file_path = "./Log/20200918.log"
+    log_file_path = "./Log/20200925.log"
     if os.path.exists(log_file_path):
         os.remove(log_file_path)
-    log_file = open("./Log/20200918.log", "w")
+    log_file = open("./Log/20200925.log", "w")
     old_stdout = sys.stdout
     sys.stdout = log_file
 
