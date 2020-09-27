@@ -109,7 +109,7 @@ parser.add_argument('--num-workers', type=int, default=4, metavar='NUM_WORKERS',
                     help='number of workers for the dataloader (default: 4)')
 parser.add_argument('--num-epochs', type=int, default=150, metavar='NUM_EPOCHS',
                     help='number of epochs (default: 150)')
-parser.add_argument('--model-file-suffix', type=str, default='effdet_h5py_rpn', metavar='SUFFIX',  # TODO(ofekp): default should be empty string?
+parser.add_argument('--model-file-suffix', type=str, default='effdet_d0', metavar='SUFFIX',  # TODO(ofekp): default should be empty string?
                     help='Suffix to identify the model file that is saved during training (default=effdet_h5py_rpn)')
 parser.add_argument('--model-file-prefix', type=str, default='', metavar='PREFIX',  # TODO(ofekp): default should be empty string?
                     help='Prefix, may be folder, to load the model file that is saved during training (default=empty string)')
