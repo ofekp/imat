@@ -31,6 +31,7 @@ import argparse
 import yaml
 import imat_dataset
 import visualize
+from datetime import datetime
 
 # imports for segmentation
 from torch.utils.data import DataLoader
@@ -94,8 +95,8 @@ def str2bool(v):
         raise argparse.ArgumentTypeError('Boolean value expected but got [{}].'.format(v))
 
 # training params
-parser.add_argument('--model-name', type=str, default='effdet', metavar='MODEL_NAME',
-                    help='The name of the model to use [effdet|faster] (default=effdet)')
+parser.add_argument('--model-name', type=str, default='tf_efficientdet_d0', metavar='MODEL_NAME',
+                    help='The name of the model to use as found in EfficientDet model_config.py file (default=tf_efficientdet_d0)')
 parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
                     help='learning rate (default: 0.01)')    # TODO(ofekp): was lr=0.005
 parser.add_argument('--weight-decay', type=float, default=0.00005, metavar='WEIGHT_DECAY',
@@ -110,6 +111,8 @@ parser.add_argument('--num-epochs', type=int, default=150, metavar='NUM_EPOCHS',
                     help='number of epochs (default: 150)')
 parser.add_argument('--model-file-suffix', type=str, default='effdet_h5py_rpn', metavar='SUFFIX',  # TODO(ofekp): default should be empty string?
                     help='Suffix to identify the model file that is saved during training (default=effdet_h5py_rpn)')
+parser.add_argument('--model-file-prefix', type=str, default='', metavar='PREFIX',  # TODO(ofekp): default should be empty string?
+                    help='Prefix, may be folder, to load the model file that is saved during training (default=empty string)')
 parser.add_argument('--add-user-name-to-model-file', type=str2bool, default=True, metavar='BOOL',
                     help='Will add the user name to the model file that is saved during training (default=True)')
 parser.add_argument('--load-model', type=str2bool, default=True, metavar='BOOL',
@@ -274,9 +277,15 @@ def freeze_bn(model):
 
 def get_model_instance_segmentation(num_classes):
     '''
+    This is the conventional model which is based on Faster R-CNN
     Note that to use this model you must install regular pytorch package (instead of from ofekp branch)
+    and use '--model-name faster' in the arguments
     The correct way to install torchvision will be:
+        pip uninstall torchvision
         pip install torchvision==0.7.0+cu101 -f https://download.pytorch.org/whl/torch_stable.html
+    To restore back to EfficientDet use:
+        pip uninstall torchvision
+        pip install git+https://github.com/ofekp/vision.git
     '''
     print("Using Faster-RCNN detection model")
     # load an instance segmentation model pre-trained pre-trained on COCO
@@ -337,7 +346,7 @@ class BackboneWithCustomFPN(nn.Module):
         return x
 
 
-def get_model_instance_segmentation_efficientnet(num_classes, target_dim, freeze_batch_norm=False):
+def get_model_instance_segmentation_efficientnet(model_name, num_classes, target_dim, freeze_batch_norm=False):
     print("Using EffDet detection model")
     # let's make the RPN generate 5 x 3 anchors per spatial
     # location, with 5 different sizes and 3 different aspect
@@ -366,7 +375,7 @@ def get_model_instance_segmentation_efficientnet(num_classes, target_dim, freeze
                 output_size=14,
                 sampling_ratio=2)
     
-    config = effdet.get_efficientdet_config('tf_efficientdet_d3')  # TODO(ofekp): use 'tf_efficientdet_d7' or try to decrease to smaller model so that we can fit 16 images in one batch
+    config = effdet.get_efficientdet_config(model_name)  # TODO(ofekp): use 'tf_efficientdet_d7' or try to decrease to smaller model so that we can fit 16 images in one batch
     efficientDetModelTemp = EfficientDet(config, pretrained_backbone=False)
     load_pretrained(efficientDetModelTemp, config.url)
     config.num_classes = num_classes
@@ -425,12 +434,14 @@ class Trainer:
         self.target_dim = target_dim
         self.is_colab = is_colab
         self.data_limit = data_limit
-        # TODO(ofekp): faster - should just use self.model.parameters()
-        # params = [p for p in self.model.parameters() if p.requires_grad]
-        # self.optimizer = self.config.optimizer_class(params, **self.config.optimizer_config)
-        self.optimizer = self.config.optimizer_class(self.model.parameters(), **self.config.optimizer_config)
+        if "faster" in self.config.model_name:
+            # special case of training the conventional model based on Faster R-CNN
+            params = [p for p in self.model.parameters() if p.requires_grad]
+            self.optimizer = self.config.optimizer_class(params, **self.config.optimizer_config)
+        else:
+            self.optimizer = self.config.optimizer_class(self.model.parameters(), **self.config.optimizer_config)
         self.scheduler = self.config.scheduler_class(self.optimizer, **self.config.scheduler_config)
-        self.model_file_path = self.get_model_file_path(is_colab, suffix=config.model_file_suffix)
+        self.model_file_path = self.get_model_file_path(is_colab, prefix=config.model_file_prefix, suffix=config.model_file_suffix)
         self.log_file_path = self.get_log_file_path(is_colab, suffix=config.model_file_suffix)
         self.epoch = 0
         self.visualize = visualize.Visualize(self.main_folder_path, categories_df, self.target_dim, dest_folder='Images')
@@ -459,7 +470,7 @@ class Trainer:
     def get_model_file_path(self, is_colab, prefix=None, suffix=None):
         model_file_path = self.get_model_identifier()
         if prefix:
-            model_file_path = prefix + '_' + model_file_path
+            model_file_path = prefix + ('' if prefix[-1] == '/' else '_') + model_file_path
         if suffix:
             model_file_path = model_file_path + '_' + suffix
             
@@ -475,7 +486,7 @@ class Trainer:
     def get_log_file_path(self, is_colab, prefix=None, suffix=None):
         log_file_path = self.get_model_identifier()
         if prefix:
-            log_file_path = prefix + '_' + log_file_path
+            log_file_path = prefix + ('' if prefix[-1] == '/' else '_') + log_file_path
         if suffix:
             log_file_path = log_file_path + '_' + suffix
             
@@ -525,10 +536,11 @@ class Trainer:
             img_idx = 2
             self.visualize.show_prediction_on_img(self.model, self.dataset_test, self.test_df, img_idx, self.is_colab, show_groud_truth=False, box_threshold=self.config.box_threshold, split_segments=True)  # TODO(ofekp): This should be test_df and dataset_test
             # evaluate on the test dataset
-            if "effdet" in self.config.model_name:
-                engine.evaluate(self.model, data_loader_test, device=self.device)
-            else:
+            if "faster" in self.config.model_name:
+                # special case of training the conventional model based on Faster R-CNN
                 engine.evaluate(self.model, data_loader_test, device=self.device, box_threshold=None)
+            else:
+                engine.evaluate(self.model, data_loader_test, device=self.device)
                 
     def log(self, message):
         if self.config.verbose:
@@ -583,6 +595,7 @@ class TrainConfig:
             self.model_file_suffix = os.getlogin() + "_" + args.model_file_suffix
         else:
             self.model_file_suffix = args.model_file_suffix
+        self.model_file_prefix = args.model_file_prefix
         self.h5py_dataset = args.h5py_dataset
         self.verbose = True
         self.save_every = args.save_every
@@ -597,19 +610,21 @@ class TrainConfig:
         
         # optimizer = torch.optim.SGD(params, lr=0.01, momentum=0.9, weight_decay=0.00005)
         # lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.5)
-        # self.optimizer_class = torch.optim.SGD
-        # self.optimizer_config = dict(
-        #     lr=args.lr,
-        #     momentum=0.9,
-        #     weight_decay=args.weight_decay
-        # )
 
-        # TODO(ofekp): faster - should use this
-        self.optimizer_class = torch.optim.AdamW
-        self.optimizer_config = dict(
-            lr=args.lr,
-            weight_decay=args.weight_decay
-        )
+        if "faster" in self.model_name:
+            # special case of training the conventional model based on Faster R-CNN
+            self.optimizer_class = torch.optim.SGD
+            self.optimizer_config = dict(
+                lr=args.lr,
+                momentum=0.9,
+                weight_decay=args.weight_decay
+            )
+        else:
+            self.optimizer_class = torch.optim.AdamW
+            self.optimizer_config = dict(
+                lr=args.lr,
+                weight_decay=args.weight_decay
+            )
         
         self.scheduler_class = torch.optim.lr_scheduler.ReduceLROnPlateau
         self.scheduler_config = dict(
@@ -630,8 +645,8 @@ def main():
 
     main_folder_path = "../"
         
-    if "effdet" not in args.model_name:
-        # case of faster rcnn model
+    if "faster" in args.model_name:
+        # special case of training the conventional model based on Faster R-CNN
         args.box_threshold = None
 
     if not os.path.exists("Args"):
@@ -639,12 +654,21 @@ def main():
     with open("Args/args_text.yml", 'w') as args_file:
         args_file.write(args_text)
 
-    log_file_path = "./Log/20200925.log"
-    if os.path.exists(log_file_path):
-        os.remove(log_file_path)
-    log_file = open("./Log/20200925.log", "w")
+    # create folders if needed
+    needed_folders = ["./Model/", "./Log/"]
+    for needed_folder in needed_folders:
+        if not os.path.exists(needed_folder):
+            os.mkdir(needed_folder)
+
+    # prepare a log file
+    now = datetime.now() # current date and time
+    date_str = now.strftime("%Y%m%d")
+    log_file_path = "./Log/" + date_str + ".log"
+    log_file = open(log_file_path, "a")
     old_stdout = sys.stdout
+    old_stderr = sys.stderr
     sys.stdout = log_file
+    sys.stderr = log_file
 
     # device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     isTPU = False
@@ -662,10 +686,11 @@ def main():
     num_classes, train_df, test_df, categories_df = process_data(main_folder_path, args.data_limit)
     print("Setting target_dim to [{}]".format(args.target_dim))
 
-    if "effdet" in args.model_name:
-        model = get_model_instance_segmentation_efficientnet(num_classes, args.target_dim, freeze_batch_norm=args.freeze_batch_norm_weights)
-    else:
+    if "faster" in args.model_name:
+        # special case of training the conventional model based on Faster R-CNN
         model = get_model_instance_segmentation(num_classes)
+    else:
+        model = get_model_instance_segmentation_efficientnet(args.model_name, num_classes, args.target_dim, freeze_batch_norm=args.freeze_batch_norm_weights)
 
     # get the model using our helper function
     train_config = TrainConfig(args)
@@ -683,6 +708,7 @@ def main():
         trainer.train()
 
     sys.stdout = old_stdout
+    sys.stderr = old_stderr
     log_file.close()
 
 
