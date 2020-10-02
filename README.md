@@ -1,8 +1,10 @@
 # Introduction
-![Project architecture](https://i.imgur.com/39SkxVL.png)
+Recent advancements in the field of machine learning, specifically with problems such as instance segmentation and detection allow us to explore new combinations between the components that assemble those networks in order to create hybrid networks that improve on performance or results.
+In this project we solve the competition of [iMaterialist](https://www.kaggle.com/c/imaterialist-fashion-2020-fgvc7/overview/description) using a modified Mask R-CNN making use of such recent advancements, EfficientNet as backbone, BiFPN and EfficientDet and achieve comparable or even improved results with smaller and faster models.
 
-# Article
-Architecture - link to image
+# Paper
+Architecture
+![Project architecture](https://i.imgur.com/39SkxVL.png)
 
 # Installation
 pip install -r requirements.txt
@@ -39,5 +41,3 @@ Start jupyter note book
 `nohup jupyter notebook --allow-root > jupyter_notebook.log`
 
 Start `imat_visualization.ipynb` notebook
-
-# TODO(ofekp): complete this using the article!
