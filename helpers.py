@@ -34,7 +34,7 @@ def rescale(matrix, target_dim, pad_color=0, interpolation=Image.NEAREST):
     if isinstance(matrix, Image.Image):
         return trans(new_im)
     else:
-        return trans(new_im) * 255  # TODO(ofekp): note that masks will get this!!
+        return trans(new_im) * 255  # TODO(ofekp): note that masks will get this
 
 
 def get_labels(image_df):
@@ -67,8 +67,8 @@ def get_masks(image_df, target_dim=None):
             run_length = int(run_length)
             mask[pixel_start:pixel_start + run_length] = 1
 
+        # TODO(ofekp): try to find how to do this without first converting to numpy
         mask = torch.tensor(mask.numpy().reshape(height, width, order='F'), dtype=torch.uint8)
-        # TODO(ofekp): find how to do this without converting to numpy
         mask = rescale(mask, target_dim).type(torch.ByteTensor)  # masks should have dtype=torch.uint8
         mask = mask.squeeze()
         masks.append(mask)

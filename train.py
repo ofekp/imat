@@ -98,7 +98,7 @@ def str2bool(v):
 parser.add_argument('--model-name', type=str, default='tf_efficientdet_d0', metavar='MODEL_NAME',
                     help='The name of the model to use as found in EfficientDet model_config.py file (default=tf_efficientdet_d0)')
 parser.add_argument('--lr', type=float, default=0.01, metavar='LR',
-                    help='learning rate (default: 0.01)')    # TODO(ofekp): was lr=0.005
+                    help='learning rate (default: 0.01)')
 parser.add_argument('--weight-decay', type=float, default=0.00005, metavar='WEIGHT_DECAY',
                     help='weight decay (default: 0.00005)')
 parser.add_argument('--box-threshold', type=float, default=0.3, metavar='BOX_THRESHOLD',
@@ -572,7 +572,7 @@ class Trainer:
 
             # update the learning rate
             self.scheduler.step(metric_logger.__getattr__('loss').avg)
-            torch.cuda.empty_cache()  # TODO(ofekp): trying to avoid GPU memory usage increase, check that this works
+            torch.cuda.empty_cache()  # ofekp: attempting to avoid GPU memory usage increase
 
             if (self.epoch) % self.config.save_every == 0:
                 self.save_model()

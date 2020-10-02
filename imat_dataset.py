@@ -103,15 +103,15 @@ class IMATDataset(BaseDataset):
         labels, masks, boxes = helpers.remove_empty_masks(labels, masks, boxes)
 
         target = {}
-        if "effdet" in self.model_name:
+        if "faster" in self.model_name:
+            target["labels"] = labels
+            assert torch.min(target["labels"]) >= 0
+            assert torch.max(target["labels"]) <= self.num_classes - 1
+        else:
             # we only need the correction for the modified model
             target["labels"] = torch.add(labels, 1)  # refer to fast_collate, this is needed for efficient det
             assert torch.min(target["labels"]) >= 1
             assert torch.max(target["labels"]) <= self.num_classes
-        else:
-            target["labels"] = labels
-            assert torch.min(target["labels"]) >= 0
-            assert torch.max(target["labels"]) <= self.num_classes - 1
         target["masks"] = masks
         target["boxes"] = boxes
         target["image_id"] = image_id_idx
@@ -127,7 +127,6 @@ class IMATDataset(BaseDataset):
         if self.gather_statistics:
             self.inc_by(self.lock, self.total_image_load_time, time.time() - image_load_start_ts)
         
-        # TODO(ofekp): make sure that this makes sense!
         # TODO(ofekp): check what happens here when the image is < self.target_dim. What will helpers.py scale method do to the image in this case?
         target["img_size"] = image_orig.size[-2:] if self.target_dim is None else (self.target_dim, self.target_dim)
         image_orig_max_dim = max(target["img_size"])
@@ -223,7 +222,7 @@ class IMATDatasetH5PY(BaseDataset):
         target["labels"] = torch.from_numpy(labels)
         assert torch.min(target["labels"]) >= 1
         assert torch.max(target["labels"]) <= self.num_classes
-        if "effdet" not in self.model_name:
+        if "faster" in self.model_name:
             # in case of the conventional model, we need to have the classes start from 0
             target["labels"] = torch.sub(target["labels"], 1)
         
@@ -236,7 +235,6 @@ class IMATDatasetH5PY(BaseDataset):
         iscrowd = torch.zeros((num_objs,), dtype=torch.int64)
         target["iscrowd"] = iscrowd
         
-        # TODO(ofekp): make sure that this makes sense!
         # TODO(ofekp): check what happens here when the image is < self.target_dim. What will helpers.py scale method do to the image in this case?
         target["img_size"] = (self.target_dim, self.target_dim)
         image_orig_max_dim = max(target["img_size"])
@@ -252,8 +250,4 @@ class IMATDatasetH5PY(BaseDataset):
         
 
     def __len__(self):
-        # if self.transforms is not None and len(self.transforms) > 0:
-        #     return 1600
-        # else:
-        #     return 400
         return self.dataset_h5py_reader.__len__()

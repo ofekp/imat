@@ -53,8 +53,8 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, gradient_accum
         #optimizer.zero_grad()
         losses.backward()
 
-        # TODO(ofekp): grad clipping
-        torch.nn.utils.clip_grad_norm_(model.parameters(), 10.0)  # TODO: change back to 10.0
+        # ofekp: we add grad clipping here to avoid instabilities in training
+        torch.nn.utils.clip_grad_norm_(model.parameters(), 10.0)
         
         # gradient_accumulation
         if steps % gradient_accumulation_steps == 0:
@@ -107,13 +107,10 @@ def evaluate(model, data_loader, device, box_threshold=0.001):
         else:
             outputs = model(images, box_threshold)
 
-        # print(targets)
-        # print(outputs)
-
         outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
         model_time = time.time() - model_time
 
-        res = {target["image_id"]: output for target, output in zip(targets, outputs)}  # TODO(ofekp): used to be target["image_id"].item()
+        res = {target["image_id"]: output for target, output in zip(targets, outputs)}  # ofekp: this used to be target["image_id"].item()
         evaluator_time = time.time()
         coco_evaluator.update(res)
         evaluator_time = time.time() - evaluator_time
