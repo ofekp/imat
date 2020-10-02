@@ -1,5 +1,5 @@
 # Introduction
-
+![Project architecture](https://i.imgur.com/39SkxVL.png)
 
 # Article
 Architecture - link to image
