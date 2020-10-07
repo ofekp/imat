@@ -42,7 +42,7 @@ Start jupyter note book
 
 Start `imat_visualization.ipynb` notebook
 
-# Detailed Installation in GCP Instance
+# Detailed Installation for GCP Instance
 
 ```
 Starting up GCP env with TPU:
