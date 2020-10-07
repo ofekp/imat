@@ -24,13 +24,13 @@ Please make note of the default settings, critically:
 # Train a new model
 
 ```
-nohup python train.py --load-model false --model-name tf_efficientdet_d0 --model-file-suffix effdet_d0
+nohup python train.py --load-model false --model-name tf_efficientdet_d0 --model-file-suffix effdet_d0 &
 ```
 
 # Continue training saved model
 
 ```
-nohup python train.py --load-model true --model-name tf_efficientdet_d0 --model-file-suffix effdet_d0
+nohup python train.py --load-model true --model-name tf_efficientdet_d0 --model-file-suffix effdet_d0 &
 ```
 
 # Visualization

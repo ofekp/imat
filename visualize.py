@@ -8,6 +8,7 @@ import torch
 import matplotlib.pyplot as plt
 import imat_dataset
 import common
+import math
 
 font = bbx.get_font_with_size(10)
 
@@ -63,7 +64,7 @@ class Visualize:
         self.show_image_data(img, class_ids, masks, bounding_boxes, figsize=figsize)
 
 
-    def show_image_data(self, img, class_ids, masks, bounding_boxes, figsize=(40, 40), split_segments=False):
+    def show_image_data(self, img, class_ids, masks, bounding_boxes, figsize=(40, 40), split_segments=False, grid_layout=False):
         height = img.shape[2]
         width = img.shape[1]
         image_with_bb = self.get_image_bounding_boxes(height, width, bounding_boxes, class_ids)
@@ -95,24 +96,49 @@ class Visualize:
             ax[2].axis('off')
         else:
             num_segments = len(masks)
-            fig, ax = plt.subplots(nrows=1, ncols=(num_segments+2), figsize=figsize)
-            i = 0
-            ax[i].imshow(img.permute(1, 2, 0))
-            ax[i].axis('off')
-            i += 1
-            for curr_mask, class_id in zip(masks, class_ids):
-                curr_mask = curr_mask.cpu()
-                class_id = class_id.cpu()
-                assert torch.min(curr_mask) >= 0.0
-                assert torch.max(curr_mask) <= 1.0
-                curr_mask = curr_mask.type(torch.FloatTensor)
+            if grid_layout:
+                fig, ax = plt.subplots(nrows=int(math.ceil((num_segments+2) / 3)), ncols=3, figsize=figsize)
+                i = 0
+                ax[0, 0].imshow(img.permute(1, 2, 0))
+                ax[0, 0].axis('off')
+                i += 1
+                r = int(i / 3)
+                c = i % 3
+                for curr_mask, class_id in zip(masks, class_ids):
+                    curr_mask = curr_mask.cpu()
+                    class_id = class_id.cpu()
+                    assert torch.min(curr_mask) >= 0.0
+                    assert torch.max(curr_mask) <= 1.0
+                    curr_mask = curr_mask.type(torch.FloatTensor)
+                    ax[r, c].imshow(img.permute(1, 2, 0))
+                    ax[r, c].imshow(curr_mask, alpha=0.7)
+                    ax[r, c].axis('off')
+                    i += 1
+                    r = int(i / 3)
+                    c = i % 3
+                ax[r, c].imshow(img.permute(1, 2, 0))
+                ax[r, c].imshow(image_with_bb)
+                ax[r, c].axis('off')
+            else:
+                fig, ax = plt.subplots(nrows=1, ncols=(num_segments+2), figsize=figsize)
+                i = 0
                 ax[i].imshow(img.permute(1, 2, 0))
-                ax[i].imshow(curr_mask, alpha=0.7)
                 ax[i].axis('off')
                 i += 1
-            ax[i].imshow(img.permute(1, 2, 0))
-            ax[i].imshow(image_with_bb)
-            ax[i].axis('off')
+                i = i
+                for curr_mask, class_id in zip(masks, class_ids):
+                    curr_mask = curr_mask.cpu()
+                    class_id = class_id.cpu()
+                    assert torch.min(curr_mask) >= 0.0
+                    assert torch.max(curr_mask) <= 1.0
+                    curr_mask = curr_mask.type(torch.FloatTensor)
+                    ax[i].imshow(img.permute(1, 2, 0))
+                    ax[i].imshow(curr_mask, alpha=0.7)
+                    ax[i].axis('off')
+                    i += 1
+                ax[i].imshow(img.permute(1, 2, 0))
+                ax[i].imshow(image_with_bb)
+                ax[i].axis('off')
 
         if self.dest_folder is None:
             plt.show()
@@ -122,7 +148,7 @@ class Visualize:
             plt.savefig(self.dest_folder + "/" + str(datetime.now().strftime("%Y%m%d-%H%M%S")) + '.png')
 
 
-    def show_prediction_on_img(self, model, dataset, dataset_df, img_idx, is_colab, show_groud_truth=True, box_threshold=0.001, split_segments=False):
+    def show_prediction_on_img(self, model, dataset, dataset_df, img_idx, is_colab, show_groud_truth=True, box_threshold=0.001, split_segments=False, grid_layout=False):
         if isinstance(dataset, imat_dataset.IMATDatasetH5PY):
             img, _ = dataset.__getitem__(img_idx)
         else:
@@ -146,7 +172,8 @@ class Visualize:
             if isinstance(dataset, imat_dataset.IMATDatasetH5PY):
                 image_ids = dataset_df['ImageId'].unique()
                 image_id = dataset.dataset_h5py_reader.get_image_id(img_idx)
+                print(image_id)
                 self.show_image_data_ground_truth(dataset_df, image_ids[image_id], is_colab)
             else:
                 self.show_image_data_ground_truth(dataset_df, dataset.image_ids[img_idx], is_colab)
-        self.show_image_data(img, class_ids, masks, boxes, split_segments=split_segments)
+        self.show_image_data(img, class_ids, masks, boxes, split_segments=split_segments, grid_layout=grid_layout)

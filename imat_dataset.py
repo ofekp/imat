@@ -171,6 +171,7 @@ class DatasetH5Reader(torch.utils.data.Dataset):
         h5py_file = h5py.File(self.in_file, "r", swmr=True)  # swmr=True allows concurrent reads
         image_idxes = h5py_file['image_ids'][:]
         h5py_file.close()
+        print(image_idxes[0:50])
         return image_idxes[idx]
 
     def __len__(self):

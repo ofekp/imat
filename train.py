@@ -348,34 +348,19 @@ class BackboneWithCustomFPN(nn.Module):
 
 def get_model_instance_segmentation_efficientnet(model_name, num_classes, target_dim, freeze_batch_norm=False):
     print("Using EffDet detection model")
-    # let's make the RPN generate 5 x 3 anchors per spatial
-    # location, with 5 different sizes and 3 different aspect
-    # ratios. We have a Tuple[Tuple[int]] because each feature
-    # map could potentially have different sizes and
-    # aspect ratios
-    anchor_generator = AnchorGenerator(sizes=((32, 64, 128, 256, 512),),
-#     anchor_generator = AnchorGenerator(sizes=((64, 176, 512, 288, 288),),
-                                       aspect_ratios=((0.5, 1.0, 2.0),))
     
-    # let's define what are the feature maps that we will
-    # use to perform the region of interest cropping, as well as
-    # the size of the crop after rescaling.
-    # if your backbone returns a Tensor, featmap_names is expected to
-    # be [0]. More generally, the backbone should return an
-    # OrderedDict[Tensor], and in featmap_names you can choose which
-    # feature maps to use.
-    # TODO(ofekp): follow where this is being used!
     roi_pooler = torchvision.ops.MultiScaleRoIAlign(featmap_names=[0],
                                                     output_size=7,
                                                     sampling_ratio=2)
-    # ofekp: note that roi_pooler is passed to box_roi_pooler in the MaskRCNN network and is not being used in roi_heads.py
+    # ofekp: note that roi_pooler is passed to box_roi_pooler in the MaskRCNN network
+    # and is not being used in roi_heads.py
     
     mask_roi_pool = MultiScaleRoIAlign(
                 featmap_names=[0, 1, 2, 3],
                 output_size=14,
                 sampling_ratio=2)
     
-    config = effdet.get_efficientdet_config(model_name)  # TODO(ofekp): use 'tf_efficientdet_d7' or try to decrease to smaller model so that we can fit 16 images in one batch
+    config = effdet.get_efficientdet_config(model_name)
     efficientDetModelTemp = EfficientDet(config, pretrained_backbone=False)
     load_pretrained(efficientDetModelTemp, config.url)
     config.num_classes = num_classes
@@ -392,26 +377,10 @@ def get_model_instance_segmentation_efficientnet(model_name, num_classes, target
                  box_roi_pool=roi_pooler)
     
     # for training with different number of classes (default is 90) we need to add this line
-    # TODO(ofekp): check if we need to init weights here
+    # TODO(ofekp): we might want to init weights of the new HeadNet
     class_net = HeadNet(config, num_outputs=config.num_classes, norm_kwargs=dict(eps=.001, momentum=.01))
     efficientDetModel = EfficientDetBB(config, class_net, efficientDetModelTemp.box_net)
     model.roi_heads.box_predictor = DetBenchTrain(efficientDetModel, config)
-#     # get number of input features for the classifier
-#     in_features = model.roi_heads.box_predictor.cls_score.in_features
-#     print(in_features)
-#     # replace the pre-trained head with a new one
-#     model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
-    
-#     # get number of input features for the classifier
-#     in_features = model.roi_heads.box_predictor.cls_score.in_features
-#     # replace the pre-trained head with a new one
-#     model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
-
-#     # now get the number of input features for the mask classifier
-#     in_features_mask = model.roi_heads.mask_predictor.conv5_mask.in_channels
-#     hidden_layer = 256  # TODO(ofekp): was 256
-#     # and replace the mask predictor with a new one
-#     model.roi_heads.mask_predictor = MaskRCNNPredictor(in_features_mask, hidden_layer, num_classes)
 
     if freeze_batch_norm:
         # we only freeze BN layers in backbone and the BiFPN
@@ -510,8 +479,8 @@ class Trainer:
         # https://discuss.pytorch.org/t/code-that-loads-sgd-fails-to-load-adam-state-to-gpu/61783
         # I also added the solution to this issue https://github.com/pytorch/pytorch/issues/34470
         self.model.to(device)
-        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-        self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+        self.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])  # TODO(ofekp): uncomment
+        self.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])  # TODO(ofekp): uncomment
 #         self.best_summary_loss = checkpoint['best_summary_loss']
         self.epoch = checkpoint['epoch'] + 1
         self.log("Loaded model file [{}] trained epochs [{}]".format(self.model_file_path, checkpoint['epoch']))
@@ -534,7 +503,7 @@ class Trainer:
         self.model.eval()
         with torch.no_grad():
             img_idx = 2
-            self.visualize.show_prediction_on_img(self.model, self.dataset_test, self.test_df, img_idx, self.is_colab, show_groud_truth=False, box_threshold=self.config.box_threshold, split_segments=True)  # TODO(ofekp): This should be test_df and dataset_test
+            self.visualize.show_prediction_on_img(self.model, self.dataset_test, self.test_df, img_idx, self.is_colab, show_groud_truth=False, box_threshold=self.config.box_threshold, split_segments=True)
             # evaluate on the test dataset
             if "faster" in self.config.model_name:
                 # special case of training the conventional model based on Faster R-CNN
@@ -571,7 +540,12 @@ class Trainer:
                 box_threshold=self.config.box_threshold)
 
             # update the learning rate
-            self.scheduler.step(metric_logger.__getattr__('loss').avg)
+            if "_d0" in self.config.model_name:
+                print("Updating StepLR")
+                self.scheduler.step()
+            else:
+                print("Updating ReduceLROnPlateau")
+                self.scheduler.step(metric_logger.__getattr__('loss').avg)
             torch.cuda.empty_cache()  # ofekp: attempting to avoid GPU memory usage increase
 
             if (self.epoch) % self.config.save_every == 0:
@@ -606,10 +580,9 @@ class TrainConfig:
         self.num_epochs = args.num_epochs
         self.model_name = args.model_name
         self.box_threshold = args.box_threshold
-        # TODO(ofekp): check if we need box_threshold_train = 0.1
-        
+
         # optimizer = torch.optim.SGD(params, lr=0.01, momentum=0.9, weight_decay=0.00005)
-        # lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=20, gamma=0.5)
+        # lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=10, gamma=0.5)
 
         if "faster" in self.model_name:
             # special case of training the conventional model based on Faster R-CNN
@@ -626,17 +599,26 @@ class TrainConfig:
                 weight_decay=args.weight_decay
             )
         
-        self.scheduler_class = torch.optim.lr_scheduler.ReduceLROnPlateau
-        self.scheduler_config = dict(
-            mode='min',
-            factor=args.sched_factor,
-            patience=args.sched_patience,
-            verbose=False, 
-            threshold=args.sched_threshold,
-            threshold_mode='abs',
-            cooldown=0, 
-            min_lr=args.sched_min_lr,
-            eps=args.sched_eps
+        if "_d0" in self.model_name:
+            print("Using StepLR")
+            self.scheduler_class = torch.optim.lr_scheduler.StepLR
+            self.scheduler_config = dict(
+                step_size=10,
+                gamma=0.2
+            )
+        else:
+            print("Using ReduceLROnPlateau")
+            self.scheduler_class = torch.optim.lr_scheduler.ReduceLROnPlateau
+            self.scheduler_config = dict(
+                mode='min',
+                factor=args.sched_factor,
+                patience=args.sched_patience,
+                verbose=False, 
+                threshold=args.sched_threshold,
+                threshold_mode='abs',
+                cooldown=0, 
+                min_lr=args.sched_min_lr,
+                eps=args.sched_eps
         )
 
 
@@ -662,7 +644,7 @@ def main():
 
     # prepare a log file
     now = datetime.now() # current date and time
-    date_str = now.strftime("%Y%m%d")
+    date_str = now.strftime("%Y%m%d%H%M")
     log_file_path = "./Log/" + date_str + ".log"
     log_file = open(log_file_path, "a")
     old_stdout = sys.stdout
