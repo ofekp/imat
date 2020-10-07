@@ -35,6 +35,10 @@ nohup python train.py --load-model false --model-name tf_efficientdet_d0 --model
 nohup python train.py --load-model true --model-name tf_efficientdet_d0 --model-file-suffix effdet_d0 &
 ```
 
+# Pre-trained Models
+
+Can be found in [Releases](https://github.com/ofekp/imat/releases/)
+
 # Visualization
 
 Start jupyter note book
