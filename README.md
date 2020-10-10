@@ -9,7 +9,13 @@ Recent advancements in the field of machine learning, specifically with problems
 In this project we solve the competition of [iMaterialist](https://www.kaggle.com/c/imaterialist-fashion-2020-fgvc7/overview/description) using a modified Mask R-CNN making use of such recent advancements, EfficientNet as backbone, BiFPN and EfficientDet and achieve comparable or even improved results with smaller and faster models.
 
 # Paper
-Architecture
+
+Our project paper is available here:
+
+[Fine_Grained_Segmentation_Task_for_Fashion_Using_FusedEfficientDet_and_MaskRCNN](https://github.com/ofekp/imat/blob/master/Paper/Fine_Grained_Segmentation_Task_for_Fashion_Using_FusedEfficientDet_and_MaskRCNN.pdf)
+
+Our network architecture, refer to the project paper for detailed explanation:
+
 ![Project architecture](https://i.imgur.com/39SkxVL.png)
 
 # Installation
