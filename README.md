@@ -12,7 +12,7 @@ In this project we solve the competition of [iMaterialist](https://www.kaggle.co
 
 Our project paper is available here:
 
-[Fine_Grained_Segmentation_Task_for_Fashion_Using_FusedEfficientDet_and_MaskRCNN](https://github.com/ofekp/imat/blob/master/Paper/Fine_Grained_Segmentation_Task_for_Fashion_Using_FusedEfficientDet_and_MaskRCNN.pdf)
+[Fine_Grained_Segmentation_Task_for_Fashionpedia_Using_FusedEfficientDet_and_MaskRCNN](https://github.com/ofekp/imat/blob/master/Paper/Fine_Grained_Segmentation_Task_for_Fashionpedia_Using_FusedEfficientDet_and_MaskRCNN.pdf)
 
 Our network architecture, refer to the project paper for detailed explanation:
 
