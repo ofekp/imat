@@ -1,7 +1,8 @@
-# Additional Code Modifications
+# Code Modifications
 For our work, we also modified the following repositories:
-1. https://github.com/ofekp/efficientdet-pytorch/ [[Code Comparison](https://github.com/rwightman/efficientdet-pytorch/compare/master...ofekp:master)]
-1. https://github.com/ofekp/vision [[Code Comparison](https://github.com/pytorch/vision/compare/master...ofekp:master)]
+1. Main repository - https://github.com/ofekp/imat
+1. EfficientDet modifications - https://github.com/ofekp/efficientdet-pytorch/ [[Code Comparison](https://github.com/rwightman/efficientdet-pytorch/compare/master...ofekp:master)]
+1. Torchvision modifications - https://github.com/ofekp/vision [[Code Comparison](https://github.com/pytorch/vision/compare/master...ofekp:master)]
 
 # Introduction
 Recent advancements in the field of machine learning, specifically with problems such as instance segmentation and detection allow us to explore new combinations between the components that assemble those networks in order to create hybrid networks that improve on performance or results.
@@ -109,4 +110,3 @@ sudo apt install libavcodec-dev
 sudo apt install libavformat-dev
 sudo apt install libswscale-dev
 ```
-
