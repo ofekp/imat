@@ -1,3 +1,8 @@
+# Additional Code Modifications
+For our work, we also modified the following repositories:
+1. https://github.com/ofekp/efficientdet-pytorch/ [[Code Comparison](https://github.com/rwightman/efficientdet-pytorch/compare/master...ofekp:master)]
+1. https://github.com/ofekp/vision [[Code Comparison](https://github.com/pytorch/vision/compare/master...ofekp:master)]
+
 # Introduction
 Recent advancements in the field of machine learning, specifically with problems such as instance segmentation and detection allow us to explore new combinations between the components that assemble those networks in order to create hybrid networks that improve on performance or results.
 In this project we solve the competition of [iMaterialist](https://www.kaggle.com/c/imaterialist-fashion-2020-fgvc7/overview/description) using a modified Mask R-CNN making use of such recent advancements, EfficientNet as backbone, BiFPN and EfficientDet and achieve comparable or even improved results with smaller and faster models.
