@@ -36,7 +36,7 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, gradient_accum
         else:
             loss_dict = model(images, box_threshold, targets)
 
-        # print(loss_dict)
+        print(loss_dict, flush=True)
         losses = sum(loss / gradient_accumulation_steps for loss in loss_dict.values())  # gradient_accumulation
 
         # reduce losses over all GPUs for logging purposes

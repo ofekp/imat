@@ -1,7 +1,3 @@
-import time 
-import pandas as pd
-import numpy as np
-import cv2
 import torch
 from PIL import Image
 import torchvision.transforms as transforms
@@ -13,7 +9,7 @@ def rescale(matrix, target_dim, pad_color=0, interpolation=Image.NEAREST):
         mode = 'RGB'
         matrix_img = matrix.copy()
     else:
-        mode = 'L'
+        mode = 'L'  # Luminance, single channel
         matrix_img = transforms.ToPILImage(mode=mode)(matrix.clone())
 
     if target_dim:
@@ -58,9 +54,9 @@ def get_masks(image_df, target_dim=None):
         mask = torch.zeros((height, width), dtype=torch.uint8).reshape(-1)
 
         # iterate over encoded pixels to create the mask for this segment
-        splitted_pixels = list(map(int, segment.split()))
-        pixel_starts = splitted_pixels[::2]
-        run_lengths = splitted_pixels[1::2]
+        split_pixels = list(map(int, segment.split()))
+        pixel_starts = split_pixels[::2]
+        run_lengths = split_pixels[1::2]
         assert max(pixel_starts) < mask.shape[0]
         for pixel_start, run_length in zip(pixel_starts, run_lengths):
             pixel_start = int(pixel_start) - 1

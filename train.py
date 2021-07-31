@@ -117,7 +117,7 @@ parser.add_argument('--sched-eps', type=float, default=1e-08, metavar='EPS',
 
 # additional params
 parser.add_argument('--gradient-accumulation-steps', type=int, default=2, metavar='NUM_EPOCHS',
-                    help='number of epoch to accomulate gradients before applying back-prop (default: 2)')  # TODO(ofekp): change to 1?
+                    help='number of epoch to accumulate gradients before applying back-prop (default: 2)')  # TODO(ofekp): change to 1?
 parser.add_argument('--save-every', type=int, default=5, metavar='NUM_EPOCHS',
                     help='save the model every few epochs (default: 5)')
 parser.add_argument('--eval-every', type=int, default=10, metavar='NUM_EPOCHS',
@@ -223,8 +223,11 @@ def process_data_coco(main_folder_path, data_limit):
     cats = coco_val.loadCats(cat_ids)
     num_classes = max([cat['id'] for cat in cats])
     print("Num of classes is [{}]".format(num_classes))
-    categories_df = pd.DataFrame(cats, columns =['name'])
+    # categories start from 0
+    categories_df = pd.DataFrame([cat['name'] for cat in cats], columns=['name'], index=[cat['id'] - 1 for cat in cats])
+    categories_df = categories_df.reindex(range(91), fill_value='none')  # in coco some categories are empty
     print(cats)
+    print(categories_df)
     return num_classes, coco_train, coco_val, categories_df
 
 
@@ -496,7 +499,7 @@ class Trainer:
     def eval_model(self, data_loader_test):
         self.model.eval()
         with torch.no_grad():
-            img_idx = 2
+            img_idx = 0
             self.visualize.show_prediction_on_img(self.model, self.dataset_test, self.test_df, img_idx, self.is_colab, show_ground_truth=False, box_threshold=self.config.box_threshold, split_segments=True)
             # evaluate on the test dataset
             if "faster" in self.config.model_name:
@@ -521,8 +524,10 @@ class Trainer:
             self.dataset_test, batch_size=self.config.batch_size, shuffle=False, num_workers=self.config.num_workers,
             collate_fn=utils.collate_fn)
 
+        # self.eval_model(data_loader_test)  # TODO: remove this line
+
         for _ in range(self.config.num_epochs):
-            # tarin one epoch
+            # train one epoch
             metric_logger = engine.train_one_epoch(
                 self.model,
                 self.optimizer,
@@ -671,6 +676,8 @@ def main():
         model = get_model_instance_segmentation(num_classes)
     else:
         model = get_model_instance_segmentation_efficientnet(args.model_name, num_classes, args.target_dim, freeze_batch_norm=args.freeze_batch_norm_weights)
+
+    print(model)
 
     # get the model using our helper function
     train_config = TrainConfig(args)

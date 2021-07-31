@@ -119,6 +119,23 @@ sudo apt install libswscale-dev
 
 # COCO
 
+**Download COCO dataset**
+
+https://gist.github.com/mkocabas/a6177fc00315403d31572e17700d7fd9
+
+```
+project
+└─── Code
+│        git clone...
+└─── Data
+     └─── annotations
+     │        json files...
+     └─── train2017
+     │        train images...
+     └─── val2017
+              validation images...
+```
+
 **CUDA**
 1. uninstall any previous cuda and nvidia driver - https://askubuntu.com/questions/206283/how-can-i-uninstall-a-nvidia-driver-completely
 2. reboot system

@@ -11,7 +11,7 @@ h5py
 nvidia-ml-py3
 cv2
 ipywidgets
-torch
+torch==1.9.0
 ninja
 cython
 pycocotools

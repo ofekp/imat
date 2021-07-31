@@ -15,7 +15,7 @@ class COCODataset(BaseDataset):
         self.train_annot_path = self.main_folder_path + '/Data/annotations/instances_train2017.json'
         self.val_annot_path = self.main_folder_path + '/Data/annotations/instances_val2017.json'
         self.is_train = is_train
-        if is_train:
+        if self.is_train:
             self.images_folder = 'train2017'
             self.coco = COCO(self.train_annot_path)  # load annotations for training set
         else:
@@ -23,7 +23,11 @@ class COCODataset(BaseDataset):
             self.coco = COCO(self.val_annot_path)  # load annotations for validation set
         self.target_dim = target_dim
         self.gather_statistics = gather_statistics
-        self.image_ids = list(self.coco.getImgIds())
+        # self.image_ids = list(self.coco.getImgIds())
+        num_of_images_with_no_labels = len([id for id in self.coco.getImgIds() if len(self.coco.getAnnIds(imgIds=id, iscrowd=None)) == 0])
+        print("Getting rid of [{}] images with no labels".format(num_of_images_with_no_labels), flush=True)
+        self.image_ids = [id for id in self.coco.getImgIds() if len(self.coco.getAnnIds(imgIds=id, iscrowd=None)) > 0][:7]
+        print("Dataset [{}] contains ids [{}]".format("train" if self.is_train else "test", self.image_ids), flush=True)
         self.model_name = model_name
         self.transforms = transforms
         self.num_classes = num_classes
@@ -60,6 +64,8 @@ class COCODataset(BaseDataset):
         annIds = self.coco.getAnnIds(imgIds=img['id'], iscrowd=None)
         anns = self.coco.loadAnns(annIds)
         labels = torch.as_tensor([ann['category_id'] for ann in anns], dtype=torch.int64)  # first label is 1
+        if len(labels) == 0:
+            raise Exception("Image with index [{}] has 0 labels as ground truth".format(idx))
         bounding_boxes = []
         masks = []
         for ann in anns:
@@ -73,12 +79,30 @@ class COCODataset(BaseDataset):
             orig_img_width = img['width']
             mask = np.zeros((orig_img_height, orig_img_width))
             mask = np.maximum(self.coco.annToMask(ann), mask)
+            assert mask.shape[0] == orig_img_height and mask.shape[1] == orig_img_width
             mask = torch.tensor(mask.reshape(orig_img_height, orig_img_width, order='F'), dtype=torch.uint8)
-            mask = helpers.rescale(mask, self.target_dim).type(torch.ByteTensor)  # masks should have dtype=torch.uint8
+            assert mask.shape[0] == orig_img_height and mask.shape[1] == orig_img_width
+            mask = helpers.rescale(mask, self.target_dim).reshape(self.target_dim, self.target_dim).type(torch.ByteTensor)  # masks should have dtype=torch.uint8
+            assert mask.shape[0] == 512 and mask.shape[1] == 512
             mask = mask.squeeze()
             masks.append(mask)
+
+        assert len(bounding_boxes) > 0
+        assert len(masks) == len(bounding_boxes) and len(masks) == len(labels)
         boxes = torch.as_tensor(bounding_boxes, dtype=torch.float32)
+        masks = torch.stack(masks)
+
+        try:
+            for box in boxes:
+                assert not torch.any(torch.isnan(box))
+        except Exception as e:
+            raise Exception("ERROR: Skipped image with id [{}] due to a BB exception [{}]".format(image_id, e))
+
         area = (boxes[:, 3] - boxes[:, 1]) * (boxes[:, 2] - boxes[:, 0])
+
+        labels, masks, boxes = helpers.remove_empty_masks(labels, masks, boxes)
+        if len(labels) == 0:
+            raise Exception("ERROR: Image with index [{}] has 0 labels after removal of small objects".format(idx))
 
         count_bad = 0
         for mask in masks:
@@ -87,15 +111,7 @@ class COCODataset(BaseDataset):
             if torch.max(mask) != 1.0:
                 count_bad += 1
         if count_bad > 0:
-            raise Exception("Found [{}] bad mask".format(count_bad))
-        masks = torch.stack(masks)
-
-        labels, masks, boxes = helpers.remove_empty_masks(labels, masks, boxes)
-
-        print("--->", flush=True)
-        print(torch.min(labels), flush=True)
-        print(torch.max(labels), flush=True)
-        print(self.num_classes, flush=True)
+            raise Exception("ERROR: Found [{}/{}] bad masks".format(count_bad, len(masks)))
 
         target = {}
         if "faster" in self.model_name:
@@ -115,6 +131,7 @@ class COCODataset(BaseDataset):
         # image_orig = mpimg.imread(common.get_image_path_coco(self.images_folder, self.is_train, img['file_name'], False))
         image_orig = Image.open(common.get_image_path_coco(self.main_folder_path, self.is_train, img['file_name'], False)).convert("RGB")
         image = helpers.rescale(image_orig, target_dim=self.target_dim)
+        assert image.shape[0] == 3 and image.shape[1] == 512 and image.shape[2] == 512
 
         # TODO(ofekp): check what happens here when the image is < self.target_dim. What will helpers.py scale method do to the image in this case?
         target["img_size"] = image_orig.size[-2:] if self.target_dim is None else (self.target_dim, self.target_dim)
@@ -129,7 +146,9 @@ class COCODataset(BaseDataset):
             self.inc_by(self.lock, self.images_processed, 1)
             self.inc_by(self.lock, self.total_process_time, time.time() - start)
 
-        assert image.shape[0] <= self.target_dim and image.shape[1] <= self.target_dim and image.shape[2] <= self.target_dim
+        # assert image.shape[0] <= self.target_dim and image.shape[1] <= self.target_dim and image.shape[2] <= self.target_dim
+        assert image.shape[0] == 3 and image.shape[1] == 512 and image.shape[2] == 512
+        assert len(masks) == len(bounding_boxes) and len(masks) == len(labels)
         return image, target
 
     def __len__(self):
