@@ -1,5 +1,7 @@
 import bounding_box as bbx
 import numpy as np
+
+import coco_dataset
 import helpers
 from PIL import Image
 from datetime import datetime
@@ -19,7 +21,6 @@ class Visualize:
         self.categories_df = categories_df
         self.dest_folder = dest_folder
 
-
     # generate a map from the class id to the label
     def get_label(self, class_id, allowed_classes=None):
         if allowed_classes is not None:
@@ -30,7 +31,6 @@ class Visualize:
             label = class_name.split(',')[0]
         label = "(" + str(class_id) + ") " + label
         return label
-
 
     # bounding_boxes - xyxy format
     def get_image_bounding_boxes(self, height, width, bounding_boxes, labels, decode_labels=True):
@@ -50,7 +50,6 @@ class Visualize:
         image_with_bb = np.array(image_with_bb, dtype=int)
         return image_with_bb
 
-
     def show_image_data_ground_truth(self, data_df, image_id, is_colab, figsize=(40, 40)):
         # Get the an image id given in the training set for visualization
         vis_df = data_df[data_df['ImageId'] == image_id]
@@ -62,7 +61,6 @@ class Visualize:
         img = Image.open(common.get_image_path(self.main_folder_path, image_id, is_colab)).convert("RGB")
         img = helpers.rescale(img, target_dim=self.target_dim)
         self.show_image_data(img, class_ids, masks, bounding_boxes, figsize=figsize)
-
 
     def show_image_data(self, img, class_ids, masks, bounding_boxes, figsize=(40, 40), split_segments=False, grid_layout=False):
         height = img.shape[2]
@@ -147,9 +145,8 @@ class Visualize:
                 os.mkdir(self.dest_folder)
             plt.savefig(self.dest_folder + "/" + str(datetime.now().strftime("%Y%m%d-%H%M%S")) + '.png')
 
-
-    def show_prediction_on_img(self, model, dataset, dataset_df, img_idx, is_colab, show_groud_truth=True, box_threshold=0.001, split_segments=False, grid_layout=False):
-        if isinstance(dataset, imat_dataset.IMATDatasetH5PY):
+    def show_prediction_on_img(self, model, dataset, dataset_df, img_idx, is_colab, show_ground_truth=True, box_threshold=0.001, split_segments=False, grid_layout=False):
+        if isinstance(dataset, imat_dataset.IMATDatasetH5PY) or isinstance(dataset, coco_dataset.COCODataset):
             img, _ = dataset.__getitem__(img_idx)
         else:
             img, _ = dataset[img_idx]
@@ -164,11 +161,12 @@ class Visualize:
                 # case of faster rcnn model
                 prediction = model([img.to(device)])
 
+        # TODO: coco will not work with show_ground_truth=True
         # class_ids, masks, boxes = helpers.remove_empty_masks(class_ids, masks, boxes)
         boxes = prediction[0]['boxes']
         class_ids = prediction[0]['labels']
         masks = prediction[0]['masks'][:, 0]
-        if show_groud_truth:
+        if show_ground_truth:
             if isinstance(dataset, imat_dataset.IMATDatasetH5PY):
                 image_ids = dataset_df['ImageId'].unique()
                 image_id = dataset.dataset_h5py_reader.get_image_id(img_idx)

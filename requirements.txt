@@ -13,7 +13,8 @@ cv2
 ipywidgets
 torch
 ninja
--e git://github.com/ofekp/vision.git
--e git://github.com/ofekp/efficientdet-pytorch.git
 cython
--e git://github.com/cocodataset/cocoapi.git#subdirectory=PythonAPI
+pycocotools
+git+https://github.com/ofekp/vision.git#egg=torchvision
+git+https://github.com/ofekp/efficientdet-pytorch.git#egg=effdet
+git+https://github.com/cocodataset/cocoapi.git#subdirectory=PythonAPI&egg=pycocotools

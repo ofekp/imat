@@ -1,60 +1,31 @@
 import torchvision
-import torchvision.transforms as transforms
 import torch
-import matplotlib.pyplot as plt
-import matplotlib.image as mpimg
-import matplotlib.cm as cm
 import numpy as np
 import json
-import math
-import re
 from torch import nn, optim
-import torch.nn.functional as F
-from torch.autograd import Variable
 from torch.utils.data.sampler import SubsetRandomSampler
 import warnings
-from sklearn import svm
-from keras.datasets import fashion_mnist
 import pandas as pd
-import joblib
 import os
-import random
 import time
-import multiprocessing
-from multiprocessing import Process, Pool, Queue, Lock, Value
-import itertools
-import pickle
-import importlib
-from PIL import Image
 import h5py
 import argparse
 import yaml
+
+import coco_dataset
 import imat_dataset
 import visualize
 from datetime import datetime
-
-# imports for segmentation
-from torch.utils.data import DataLoader
-from torch.utils.data import Dataset as BaseDataset
-
-# imports external packages (from folder)
-import helpers
-import utils
+from pycocotools.coco import COCO
 import transforms as T
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 from torchvision.models.detection.mask_rcnn import MaskRCNNPredictor, MaskRCNN
-from torchvision.models.detection.rpn import AnchorGenerator
 from torchvision.ops import MultiScaleRoIAlign
-from torchvision.ops import misc as misc_nn_ops
-import pycocotools
 import coco_utils, coco_eval, engine, utils
-from timm.models.layers import get_act_layer
-from timm import create_model
 import effdet
 from effdet import BiFpn, DetBenchTrain, EfficientDet, load_pretrained, load_pretrained, HeadNet
 import subprocess
 import sys
-from ipywidgets import FloatProgress
 import functools
 print = functools.partial(print, flush=True)
 
@@ -115,7 +86,7 @@ parser.add_argument('--model-file-prefix', type=str, default='', metavar='PREFIX
                     help='Prefix, may be folder, to load the model file that is saved during training (default=empty string)')
 parser.add_argument('--add-user-name-to-model-file', type=str2bool, default=True, metavar='BOOL',
                     help='Will add the user name to the model file that is saved during training (default=True)')
-parser.add_argument('--load-model', type=str2bool, default=True, metavar='BOOL',
+parser.add_argument('--load-model', type=str2bool, default=False, metavar='BOOL',
                     help='Will load a model file (default=False)')
 parser.add_argument('--train', type=str2bool, default=True, metavar='BOOL',
                     help='Will start training the model (default=True)')
@@ -125,6 +96,8 @@ parser.add_argument('--target-dim', type=int, default=512, metavar='DIM',
                     help='Dimention of the images. It is vital that the image size will be devisiable by 2 at least 6 times (default=512)')
 parser.add_argument('--h5py-dataset', type=str2bool, default=True, metavar='BOOL',
                     help='Use an H5PY dataset as created using h5py_dataset_writer.py (default=True)')
+parser.add_argument('--coco-dataset', type=str2bool, default=True, metavar='BOOL',
+                    help='Use COCO dataset (default=True)')
 parser.add_argument('--freeze-batch-norm-weights', type=str2bool, default=True, metavar='BOOL',
                     help='Freeze batch normalization weights (default=True)')
 
@@ -238,6 +211,21 @@ def process_data(main_folder_path, data_limit):
     print()
     train_df.head()
     return num_classes, train_df, test_df, categories_df
+
+
+def process_data_coco(main_folder_path, data_limit):
+    train_annot_path = main_folder_path + '/Data/annotations/instances_train2017.json'
+    val_annot_path = main_folder_path + '/Data/annotations/instances_val2017.json'
+    coco_train = COCO(train_annot_path)
+    coco_val = COCO(val_annot_path)
+    # Load the categories in a variable
+    cat_ids = coco_val.getCatIds()
+    cats = coco_val.loadCats(cat_ids)
+    num_classes = max([cat['id'] for cat in cats])
+    print("Num of classes is [{}]".format(num_classes))
+    categories_df = pd.DataFrame(cats, columns =['name'])
+    print(cats)
+    return num_classes, coco_train, coco_val, categories_df
 
 
 # h5py
@@ -416,15 +404,21 @@ class Trainer:
         self.visualize = visualize.Visualize(self.main_folder_path, categories_df, self.target_dim, dest_folder='Images')
 
         # use our dataset and defined transformations
-        if self.config.h5py_dataset:
-            h5_reader = imat_dataset.DatasetH5Reader("../imaterialist_" + str(self.target_dim) + ".hdf5")
-            self.dataset = imat_dataset.IMATDatasetH5PY(h5_reader, self.num_classes, self.target_dim, self.config.model_name, T.get_transform(train=True))
-            h5_reader_test = imat_dataset.DatasetH5Reader("../imaterialist_test_" + str(self.target_dim) + ".hdf5")
-            self.dataset_test = imat_dataset.IMATDatasetH5PY(h5_reader_test, self.num_classes, self.target_dim, self.config.model_name, T.get_transform(train=False))
+        if self.config.coco_dataset:
+            self.dataset = coco_dataset.COCODataset(True, self.config.model_name, self.main_folder_path, self.target_dim, self.num_classes,
+                                                    T.get_transform(train=True), False)
+            self.dataset_test = coco_dataset.COCODataset(False, self.config.model_name, self.main_folder_path, self.target_dim, self.num_classes,
+                                                    T.get_transform(train=True), False)
         else:
-            self.dataset = imat_dataset.IMATDataset(self.main_folder_path, self.train_df, self.num_classes, self.target_dim, self.config.model_name, False, T.get_transform(train=True))
-            self.dataset_test = imat_dataset.IMATDataset(self.main_folder_path, self.test_df, self.num_classes, self.target_dim, self.config.model_name, False, T.get_transform(train=False))
-        
+            if self.config.h5py_dataset:
+                h5_reader = imat_dataset.DatasetH5Reader("../imaterialist_" + str(self.target_dim) + ".hdf5")
+                self.dataset = imat_dataset.IMATDatasetH5PY(h5_reader, self.num_classes, self.target_dim, self.config.model_name, T.get_transform(train=True))
+                h5_reader_test = imat_dataset.DatasetH5Reader("../imaterialist_test_" + str(self.target_dim) + ".hdf5")
+                self.dataset_test = imat_dataset.IMATDatasetH5PY(h5_reader_test, self.num_classes, self.target_dim, self.config.model_name, T.get_transform(train=False))
+            else:
+                self.dataset = imat_dataset.IMATDataset(self.main_folder_path, self.train_df, self.num_classes, self.target_dim, self.config.model_name, False, T.get_transform(train=True))
+                self.dataset_test = imat_dataset.IMATDataset(self.main_folder_path, self.test_df, self.num_classes, self.target_dim, self.config.model_name, False, T.get_transform(train=False))
+
         # TODO(ofekp): do we need this?
         # split the dataset in train and test set
         # indices = torch.randperm(len(dataset)).tolist()
@@ -503,7 +497,7 @@ class Trainer:
         self.model.eval()
         with torch.no_grad():
             img_idx = 2
-            self.visualize.show_prediction_on_img(self.model, self.dataset_test, self.test_df, img_idx, self.is_colab, show_groud_truth=False, box_threshold=self.config.box_threshold, split_segments=True)
+            self.visualize.show_prediction_on_img(self.model, self.dataset_test, self.test_df, img_idx, self.is_colab, show_ground_truth=False, box_threshold=self.config.box_threshold, split_segments=True)
             # evaluate on the test dataset
             if "faster" in self.config.model_name:
                 # special case of training the conventional model based on Faster R-CNN
@@ -571,6 +565,7 @@ class TrainConfig:
             self.model_file_suffix = args.model_file_suffix
         self.model_file_prefix = args.model_file_prefix
         self.h5py_dataset = args.h5py_dataset
+        self.coco_dataset = args.coco_dataset
         self.verbose = True
         self.save_every = args.save_every
         self.eval_every = args.eval_every
@@ -665,7 +660,10 @@ def main():
     if device == 'cuda:0':
         print("Device description [{}]".format(torch.cuda.get_device_name(0)))
 
-    num_classes, train_df, test_df, categories_df = process_data(main_folder_path, args.data_limit)
+    if args.coco_dataset:
+        num_classes, train_df, test_df, categories_df = process_data_coco(main_folder_path, args.data_limit)
+    else:
+        num_classes, train_df, test_df, categories_df = process_data(main_folder_path, args.data_limit)
     print("Setting target_dim to [{}]".format(args.target_dim))
 
     if "faster" in args.model_name:

@@ -116,3 +116,23 @@ sudo apt install libavcodec-dev
 sudo apt install libavformat-dev
 sudo apt install libswscale-dev
 ```
+
+# COCO
+
+**CUDA**
+1. uninstall any previous cuda and nvidia driver - https://askubuntu.com/questions/206283/how-can-i-uninstall-a-nvidia-driver-completely
+2. reboot system
+3. Install using the instructions here (runfile) - https://developer.nvidia.com/cuda-10.2-download-archive?target_os=Linux&target_arch=x86_64&target_distro=Ubuntu&target_version=1804&target_type=runfilelocal
+
+**Install requirements**
+```
+cat requirements.txt | xargs -n 1 -L 1 pip3 install
+```
+
+**Train a new model**
+
+```
+python train.py --load-model False --batch-size 6
+```
+
+
