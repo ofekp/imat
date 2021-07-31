@@ -91,6 +91,7 @@ unzip imaterialist-fashion-2020-fgvc7 -d Data
 jupyter notebook --generate-config
 echo -e "c = get_config()\nc.NotebookApp.ip = '*'\nc.NotebookApp.open_browser = False\nc.NotebookApp.port = 8888\n" >> ~/.jupyter/jupyter_notebook_config.py
 # setting up git
+git config --global core.editor "vim"
 git config --global user.name <username>
 git config --global user.email <email>
 echo -e "[alias]\n\tst = status\n\tbr = branch\n\tco = checkout\n\tlg = log --decorate --oneline -10" >> ~/.gitconfig

@@ -26,8 +26,8 @@ class COCODataset(BaseDataset):
         # self.image_ids = list(self.coco.getImgIds())
         num_of_images_with_no_labels = len([id for id in self.coco.getImgIds() if len(self.coco.getAnnIds(imgIds=id, iscrowd=None)) == 0])
         print("Getting rid of [{}] images with no labels".format(num_of_images_with_no_labels), flush=True)
-        self.image_ids = [id for id in self.coco.getImgIds() if len(self.coco.getAnnIds(imgIds=id, iscrowd=None)) > 0][:7]
-        print("Dataset [{}] contains ids [{}]".format("train" if self.is_train else "test", self.image_ids), flush=True)
+        self.image_ids = [id for id in self.coco.getImgIds() if len(self.coco.getAnnIds(imgIds=id, iscrowd=None)) > 0]
+        print("Dataset [{}] contains [{}] images that have at least one instance".format("train" if self.is_train else "test", len(self.image_ids)), flush=True)
         self.model_name = model_name
         self.transforms = transforms
         self.num_classes = num_classes
@@ -87,10 +87,12 @@ class COCODataset(BaseDataset):
             mask = mask.squeeze()
             masks.append(mask)
 
-        assert len(bounding_boxes) > 0
-        assert len(masks) == len(bounding_boxes) and len(masks) == len(labels)
         boxes = torch.as_tensor(bounding_boxes, dtype=torch.float32)
         masks = torch.stack(masks)
+        if len(labels) == 0:
+            raise Exception("ERROR: Image with id [{}] has 0 labels after removal of small objects".format(image_id))
+        if not len(masks) == len(boxes) or not len(masks) == len(labels):
+            raise Exception("ERROR: Mismatch for image with id [{}], # masks [{}] # boxes [{}] # labels [{}]".format(image_id, len(masks), len(bounding_boxes), len(labels)))
 
         try:
             for box in boxes:
@@ -102,7 +104,9 @@ class COCODataset(BaseDataset):
 
         labels, masks, boxes = helpers.remove_empty_masks(labels, masks, boxes)
         if len(labels) == 0:
-            raise Exception("ERROR: Image with index [{}] has 0 labels after removal of small objects".format(idx))
+            raise Exception("ERROR: Image with id [{}] has 0 labels after removal of small objects".format(image_id))
+        if not len(masks) == len(boxes) or not len(masks) == len(labels):
+            raise Exception("ERROR: Mismatch for image with id [{}] after removing small objects, # masks [{}] # boxes [{}] # labels [{}]".format(image_id, len(masks), len(bounding_boxes), len(labels)))
 
         count_bad = 0
         for mask in masks:
@@ -148,7 +152,7 @@ class COCODataset(BaseDataset):
 
         # assert image.shape[0] <= self.target_dim and image.shape[1] <= self.target_dim and image.shape[2] <= self.target_dim
         assert image.shape[0] == 3 and image.shape[1] == 512 and image.shape[2] == 512
-        assert len(masks) == len(bounding_boxes) and len(masks) == len(labels)
+        assert len(masks) == len(boxes) and len(masks) == len(labels)
         return image, target
 
     def __len__(self):
