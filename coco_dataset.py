@@ -26,7 +26,7 @@ class COCODataset(BaseDataset):
         # self.image_ids = list(self.coco.getImgIds())
         num_of_images_with_no_labels = len([id for id in self.coco.getImgIds() if len(self.coco.getAnnIds(imgIds=id, iscrowd=None)) == 0])
         print("Getting rid of [{}] images with no labels".format(num_of_images_with_no_labels), flush=True)
-        self.image_ids = [id for id in self.coco.getImgIds() if len(self.coco.getAnnIds(imgIds=id, iscrowd=None)) > 0]
+        self.image_ids = [id for id in self.coco.getImgIds() if len(self.coco.getAnnIds(imgIds=id, iscrowd=None)) > 0][:1000]
         print("Dataset [{}] contains [{}] images that have at least one instance".format("train" if self.is_train else "test", len(self.image_ids)), flush=True)
         self.model_name = model_name
         self.transforms = transforms
@@ -52,10 +52,10 @@ class COCODataset(BaseDataset):
         avg_time_per_image = 0 if images_processed == 0 else total_process_time / images_processed
         print("Processed [{}] images in [{}] seconds"
               " Avg per image [{}]"
-              .format(
-            images_processed,
-            total_process_time,
-            avg_time_per_image))
+            .format(
+                images_processed,
+                total_process_time,
+                avg_time_per_image))
 
     def __getitem__(self, idx):
         start = time.time()

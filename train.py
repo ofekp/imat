@@ -411,7 +411,7 @@ class Trainer:
             self.dataset = coco_dataset.COCODataset(True, self.config.model_name, self.main_folder_path, self.target_dim, self.num_classes,
                                                     T.get_transform(train=True), False)
             self.dataset_test = coco_dataset.COCODataset(False, self.config.model_name, self.main_folder_path, self.target_dim, self.num_classes,
-                                                    T.get_transform(train=True), False)
+                                                         T.get_transform(train=True), False)
         else:
             if self.config.h5py_dataset:
                 h5_reader = imat_dataset.DatasetH5Reader("../imaterialist_" + str(self.target_dim) + ".hdf5")
@@ -494,7 +494,7 @@ class Trainer:
         }, self.model_file_path)        
         self.log('Saved model to [{}]'.format(self.model_file_path))
         print_nvidia_smi(self.device)
-        self.dataset_test.show_stats()
+        self.dataset.show_stats()
 
     def eval_model(self, data_loader_test):
         self.model.eval()
@@ -649,8 +649,8 @@ def main():
     log_file = open(log_file_path, "a")
     old_stdout = sys.stdout
     old_stderr = sys.stderr
-    sys.stdout = log_file
-    sys.stderr = log_file
+    # sys.stdout = log_file
+    # sys.stderr = log_file
 
     # device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     isTPU = False
@@ -676,8 +676,6 @@ def main():
         model = get_model_instance_segmentation(num_classes)
     else:
         model = get_model_instance_segmentation_efficientnet(args.model_name, num_classes, args.target_dim, freeze_batch_norm=args.freeze_batch_norm_weights)
-
-    print(model)
 
     # get the model using our helper function
     train_config = TrainConfig(args)
