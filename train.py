@@ -501,7 +501,7 @@ class Trainer:
         self.model.eval()
         with torch.no_grad():
             img_idx = 0
-            self.visualize.show_prediction_on_img(self.model, self.dataset_test, self.test_df, img_idx, self.is_colab, show_ground_truth=False, box_threshold=self.config.box_threshold, split_segments=True)
+            # self.visualize.show_prediction_on_img(self.model, self.dataset_test, self.test_df, img_idx, self.is_colab, show_ground_truth=False, box_threshold=self.config.box_threshold, split_segments=True)
             # evaluate on the test dataset
             if "faster" in self.config.model_name:
                 # special case of training the conventional model based on Faster R-CNN

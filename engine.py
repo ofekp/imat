@@ -2,9 +2,9 @@ import math
 import sys
 import time
 import torch
-
+import psutil
+import gc
 import torchvision.models.detection.mask_rcnn
-
 from coco_utils import get_coco_api_from_dataset
 from coco_eval import CocoEvaluator
 import utils
@@ -97,25 +97,41 @@ def evaluate(model, data_loader, device, box_threshold=0.001):
     iou_types = _get_iou_types(model)
     coco_evaluator = CocoEvaluator(coco, iou_types)
 
+    count = 0
+    print("Memory usage in eval [{}] (0)".format(psutil.virtual_memory().percent), flush=True)
     for images, targets in metric_logger.log_every(data_loader, 100, header):
-        images = list(img.to(device) for img in images)
-        targets = [{k: v.to(device) if torch.is_tensor(v) else v for k, v in t.items()} for t in targets]
+        images_gpu = list(img.to(device) for img in images)
 
-        torch.cuda.synchronize()
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
         model_time = time.time()
         if box_threshold is None:
-            outputs = model(images)
+            outputs = model(images_gpu)
         else:
-            outputs = model(images, box_threshold)
+            outputs = model(images_gpu, box_threshold)
 
+        targets_cpu = [{k: v.to(cpu_device) if torch.is_tensor(v) else v for k, v in t.items()} for t in targets]
         outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
         model_time = time.time() - model_time
 
-        res = {target["image_id"]: output for target, output in zip(targets, outputs)}  # ofekp: this used to be target["image_id"].item()
+        res = {target["image_id"]: output for target, output in zip(targets_cpu, outputs)}  # ofekp: this used to be target["image_id"].item()
         evaluator_time = time.time()
         coco_evaluator.update(res)
         evaluator_time = time.time() - evaluator_time
         metric_logger.update(model_time=model_time, evaluator_time=evaluator_time)
+        count += 1
+        if count % 10 == 0:
+            print("Memory usage in eval [{}] ({})".format(psutil.virtual_memory().percent, count), flush=True)
+
+        # gc.collect()
+        # for image_cpu in images_gpu:
+        #     del image_cpu
+        # for output in outputs:
+        #     for k in list(output.keys()):
+        #         del output[k]
+        # for target_cpu in targets_cpu:
+        #     for k in list(target_cpu.keys()):
+        #         del target_cpu[k]
 
     # gather the stats from all processes
     metric_logger.synchronize_between_processes()

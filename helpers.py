@@ -108,7 +108,7 @@ def get_bounding_boxes(masks):
 
 
 def remove_empty_masks(labels, masks):
-    indices_to_keep_masks = []  # empty array with 1 dim
+    indices_to_keep_masks = []
     idx = 0
     for mask in masks:
         if torch.max(mask).cpu().numpy() == 1:
@@ -126,6 +126,16 @@ def remove_empty_masks(labels, masks):
 
     # indices_to_keep = torch.tensor(list(set(indices_to_keep_masks) & set(indices_to_keep_bbx)), dtype=int)
     return labels[indices_to_keep_masks], masks[indices_to_keep_masks]
+
+
+def remove_empty_boxes(labels, boxes, masks):
+    indices_to_keep_bbx = []
+    idx = 0
+    for box in boxes:
+        if ((box[3] - box[1]) > 0) and ((box[2] - box[0]) > 0):
+            indices_to_keep_bbx.append(idx)
+        idx += 1
+    return labels[indices_to_keep_bbx], boxes[indices_to_keep_bbx], masks[indices_to_keep_bbx]
 
 
 # def worker(q, lock, counter, x):

@@ -84,6 +84,7 @@ class COCODataset(BaseDataset):
 
         labels, masks = helpers.remove_empty_masks(labels, masks)
         boxes = helpers.get_bounding_boxes(masks)
+        labels, boxes, masks = helpers.remove_empty_boxes(labels, boxes, masks)
         if len(labels) == 0:
             raise Exception("ERROR: Image with id [{}] has 0 labels after removal of small objects".format(image_id))
         if not len(masks) == len(boxes) or not len(masks) == len(labels):

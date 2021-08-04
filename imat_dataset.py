@@ -91,6 +91,7 @@ class IMATDataset(BaseDataset):
 
         box_start_ts = time.time()
         boxes = helpers.get_bounding_boxes(masks)
+        labels, boxes, masks = helpers.remove_empty_boxes(labels, boxes, masks)
         try:
             for box in boxes:
                 assert not torch.any(torch.isnan(box))

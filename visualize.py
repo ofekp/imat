@@ -58,6 +58,7 @@ class Visualize:
         masks = helpers.get_masks(vis_df, target_dim=self.target_dim)
         class_ids, masks = helpers.remove_empty_masks(class_ids, masks)
         bounding_boxes = helpers.get_bounding_boxes(masks)
+        labels, boxes, masks = helpers.remove_empty_boxes(class_ids, bounding_boxes, masks)
         img = Image.open(common.get_image_path(self.main_folder_path, image_id, is_colab)).convert("RGB")
         img = helpers.rescale(img, target_dim=self.target_dim)
         self.show_image_data(img, class_ids, masks, bounding_boxes, figsize=figsize)
