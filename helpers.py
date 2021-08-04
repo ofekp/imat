@@ -83,13 +83,9 @@ def get_masks(image_df, target_dim=None):
     return torch.stack(masks)
 
 
-def get_bounding_boxes(image_df, masks):
+def get_bounding_boxes(masks):
     bounding_boxes = []
     for curr_mask in masks:  # [512, 512, 3]
-        x_left = 0.0
-        y_top = 0.0
-        x_right = 0.0
-        y_bottom = 0.0
         if torch.max(curr_mask) == 1.0:
             rows_sum = torch.sum(curr_mask, axis=1)
             rows_sum_non_zero = torch.where(rows_sum > 0)[0]
@@ -103,15 +99,15 @@ def get_bounding_boxes(image_df, masks):
         
             # order is important as it is the input order the bb package is expecting,
             # so do NOT skip inserting the image
-            if not (x_left >= 0 and x_left < x_right and y_top >= 0 and y_bottom > y_top):
-                image_id = image_df['ImageId'].iloc[0]
-                #print("ERROR: Image [{}] x_left [{}] y_top [{}] x_right [{}] y_bottom [{}]".format(image_id, str(x_left), str(y_top), str(x_right), str(y_bottom)))
+            # if not (x_left >= 0 and x_left < x_right and y_top >= 0 and y_bottom > y_top):
+            #     image_id = image_df['ImageId'].iloc[0]
+            #     #print("ERROR: Image [{}] x_left [{}] y_top [{}] x_right [{}] y_bottom [{}]".format(image_id, str(x_left), str(y_top), str(x_right), str(y_bottom)))
             bounding_boxes.append((x_left, y_top, x_right, y_bottom))
         
     return torch.as_tensor(bounding_boxes, dtype=torch.float32)
 
 
-def remove_empty_masks(labels, masks, bounding_boxes):
+def remove_empty_masks(labels, masks):
     indices_to_keep_masks = []  # empty array with 1 dim
     idx = 0
     for mask in masks:
@@ -119,17 +115,17 @@ def remove_empty_masks(labels, masks, bounding_boxes):
             indices_to_keep_masks.append(idx)
         idx += 1
 
-    indices_to_keep_bbx = []  # empty array with 1 dim
-    idx = 0
-    for box in bounding_boxes:
-        if ((box[3] - box[1]) > 0) and ((box[2] - box[0]) > 0):
-            indices_to_keep_bbx.append(idx)
-        idx += 1
+    # indices_to_keep_bbx = []  # empty array with 1 dim
+    # idx = 0
+    # for box in bounding_boxes:
+    #     if ((box[3] - box[1]) > 0) and ((box[2] - box[0]) > 0):
+    #         indices_to_keep_bbx.append(idx)
+    #     idx += 1
 
     # TODO(ofekp): remove segments that have an area less than some thresholds (e.g. image id '361cc7654672860b1b7c85fe8e92b38a')
 
-    indices_to_keep = torch.tensor(list(set(indices_to_keep_masks) & set(indices_to_keep_bbx)), dtype=int)
-    return labels[indices_to_keep], masks[indices_to_keep], bounding_boxes[indices_to_keep]
+    # indices_to_keep = torch.tensor(list(set(indices_to_keep_masks) & set(indices_to_keep_bbx)), dtype=int)
+    return labels[indices_to_keep_masks], masks[indices_to_keep_masks]
 
 
 # def worker(q, lock, counter, x):

@@ -1,5 +1,4 @@
 from torch.utils.data import Dataset as BaseDataset
-from pycocotools.coco import COCO
 from multiprocessing import Lock, Value
 import time
 import torch
@@ -10,20 +9,12 @@ import common
 
 
 class COCODataset(BaseDataset):
-    def __init__(self, is_train, model_name, main_folder_path, target_dim, num_classes, transforms, is_colab, gather_statistics=True):
+    def __init__(self, coco, is_train, model_name, main_folder_path, target_dim, num_classes, transforms, is_colab, gather_statistics=True):
         self.main_folder_path = main_folder_path
-        self.train_annot_path = self.main_folder_path + '/Data/annotations/instances_train2017.json'
-        self.val_annot_path = self.main_folder_path + '/Data/annotations/instances_val2017.json'
         self.is_train = is_train
-        if self.is_train:
-            self.images_folder = 'train2017'
-            self.coco = COCO(self.train_annot_path)  # load annotations for training set
-        else:
-            self.images_folder = 'val2017'
-            self.coco = COCO(self.val_annot_path)  # load annotations for validation set
+        self.coco = coco
         self.target_dim = target_dim
         self.gather_statistics = gather_statistics
-        # self.image_ids = list(self.coco.getImgIds())
         num_of_images_with_no_labels = len([id for id in self.coco.getImgIds() if len(self.coco.getAnnIds(imgIds=id, iscrowd=None)) == 0])
         print("Getting rid of [{}] images with no labels".format(num_of_images_with_no_labels), flush=True)
         self.image_ids = [id for id in self.coco.getImgIds() if len(self.coco.getAnnIds(imgIds=id, iscrowd=None)) > 0][:1000]
@@ -66,15 +57,15 @@ class COCODataset(BaseDataset):
         labels = torch.as_tensor([ann['category_id'] for ann in anns], dtype=torch.int64)  # first label is 1
         if len(labels) == 0:
             raise Exception("Image with index [{}] has 0 labels as ground truth".format(idx))
-        bounding_boxes = []
+        # bounding_boxes = []
         masks = []
         for ann in anns:
-            bb = ann['bbox']
-            x_left = bb[0]
-            y_top = bb[1]
-            x_right = x_left + bb[2]
-            y_bottom = y_top + bb[3]
-            bounding_boxes.append((x_left, y_top, x_right, y_bottom))
+            # bb = ann['bbox']
+            # x_left = bb[0]
+            # y_top = bb[1]
+            # x_right = x_left + bb[2]
+            # y_bottom = y_top + bb[3]
+            # bounding_boxes.append((x_left, y_top, x_right, y_bottom))
             orig_img_height = img['height']
             orig_img_width = img['width']
             mask = np.zeros((orig_img_height, orig_img_width))
@@ -87,12 +78,16 @@ class COCODataset(BaseDataset):
             mask = mask.squeeze()
             masks.append(mask)
 
-        boxes = torch.as_tensor(bounding_boxes, dtype=torch.float32)
         masks = torch.stack(masks)
         if len(labels) == 0:
             raise Exception("ERROR: Image with id [{}] has 0 labels after removal of small objects".format(image_id))
+
+        labels, masks = helpers.remove_empty_masks(labels, masks)
+        boxes = helpers.get_bounding_boxes(masks)
+        if len(labels) == 0:
+            raise Exception("ERROR: Image with id [{}] has 0 labels after removal of small objects".format(image_id))
         if not len(masks) == len(boxes) or not len(masks) == len(labels):
-            raise Exception("ERROR: Mismatch for image with id [{}], # masks [{}] # boxes [{}] # labels [{}]".format(image_id, len(masks), len(bounding_boxes), len(labels)))
+            raise Exception("ERROR: Mismatch for image with id [{}] after removing small objects, # masks [{}] # boxes [{}] # labels [{}]".format(image_id, len(masks), len(boxes), len(labels)))
 
         try:
             for box in boxes:
@@ -101,12 +96,6 @@ class COCODataset(BaseDataset):
             raise Exception("ERROR: Skipped image with id [{}] due to a BB exception [{}]".format(image_id, e))
 
         area = (boxes[:, 3] - boxes[:, 1]) * (boxes[:, 2] - boxes[:, 0])
-
-        labels, masks, boxes = helpers.remove_empty_masks(labels, masks, boxes)
-        if len(labels) == 0:
-            raise Exception("ERROR: Image with id [{}] has 0 labels after removal of small objects".format(image_id))
-        if not len(masks) == len(boxes) or not len(masks) == len(labels):
-            raise Exception("ERROR: Mismatch for image with id [{}] after removing small objects, # masks [{}] # boxes [{}] # labels [{}]".format(image_id, len(masks), len(bounding_boxes), len(labels)))
 
         count_bad = 0
         for mask in masks:

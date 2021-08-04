@@ -1,3 +1,4 @@
+import gc
 import torchvision
 import torch
 import numpy as np
@@ -11,7 +12,7 @@ import time
 import h5py
 import argparse
 import yaml
-
+import psutil
 import coco_dataset
 import imat_dataset
 import visualize
@@ -405,13 +406,13 @@ class Trainer:
         self.log_file_path = self.get_log_file_path(is_colab, suffix=config.model_file_suffix)
         self.epoch = 0
         self.visualize = visualize.Visualize(self.main_folder_path, categories_df, self.target_dim, dest_folder='Images')
-
+        self.log("Memory usage before initializing the datasets [{}]".format(get_memory_usage()))
         # use our dataset and defined transformations
         if self.config.coco_dataset:
-            self.dataset = coco_dataset.COCODataset(True, self.config.model_name, self.main_folder_path, self.target_dim, self.num_classes,
+            self.dataset = coco_dataset.COCODataset(self.train_df, True, self.config.model_name, self.main_folder_path, self.target_dim, self.num_classes,
                                                     T.get_transform(train=True), False)
-            self.dataset_test = coco_dataset.COCODataset(False, self.config.model_name, self.main_folder_path, self.target_dim, self.num_classes,
-                                                         T.get_transform(train=True), False)
+            self.dataset_test = coco_dataset.COCODataset(self.test_df, False, self.config.model_name, self.main_folder_path, self.target_dim, self.num_classes,
+                                                         T.get_transform(train=False), False)
         else:
             if self.config.h5py_dataset:
                 h5_reader = imat_dataset.DatasetH5Reader("../imaterialist_" + str(self.target_dim) + ".hdf5")
@@ -421,7 +422,7 @@ class Trainer:
             else:
                 self.dataset = imat_dataset.IMATDataset(self.main_folder_path, self.train_df, self.num_classes, self.target_dim, self.config.model_name, False, T.get_transform(train=True))
                 self.dataset_test = imat_dataset.IMATDataset(self.main_folder_path, self.test_df, self.num_classes, self.target_dim, self.config.model_name, False, T.get_transform(train=False))
-
+        self.log("Memory usage after initializing the datasets [{}]".format(get_memory_usage()))
         # TODO(ofekp): do we need this?
         # split the dataset in train and test set
         # indices = torch.randperm(len(dataset)).tolist()
@@ -510,7 +511,7 @@ class Trainer:
                 
     def log(self, message):
         if self.config.verbose:
-            print(message)
+            print(message, flush=True)
         with open(self.log_file_path, 'a+') as logger:
             logger.write(f'{message}\n')
 
@@ -554,6 +555,7 @@ class Trainer:
                 self.eval_model(data_loader_test)
             
             self.log("Epoch [{}/{}]".format(self.epoch + 1, self.config.num_epochs))
+            self.log("Memory usage after epoch [{}]".format(get_memory_usage()))
             self.epoch += 1
 
         self.log("Saving model one last time")
@@ -622,8 +624,14 @@ class TrainConfig:
         )
 
 
+def get_memory_usage():
+    return psutil.virtual_memory().percent
+
+
 def main():
     args, args_text = parse_args()
+
+    print("Memory usage on start [{}]".format(get_memory_usage()))
 
     main_folder_path = "../"
         
@@ -665,17 +673,23 @@ def main():
     if device == 'cuda:0':
         print("Device description [{}]".format(torch.cuda.get_device_name(0)))
 
+    print("Memory usage before data processing [{}]".format(get_memory_usage()))
+
     if args.coco_dataset:
         num_classes, train_df, test_df, categories_df = process_data_coco(main_folder_path, args.data_limit)
     else:
         num_classes, train_df, test_df, categories_df = process_data(main_folder_path, args.data_limit)
     print("Setting target_dim to [{}]".format(args.target_dim))
 
+    print("Memory usage after data processing [{}]".format(get_memory_usage()))
+
     if "faster" in args.model_name:
         # special case of training the conventional model based on Faster R-CNN
         model = get_model_instance_segmentation(num_classes)
     else:
         model = get_model_instance_segmentation_efficientnet(args.model_name, num_classes, args.target_dim, freeze_batch_norm=args.freeze_batch_norm_weights)
+
+    print("Memory usage after initializing the model [{}]".format(get_memory_usage()))
 
     # get the model using our helper function
     train_config = TrainConfig(args)

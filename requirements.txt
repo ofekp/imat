@@ -15,6 +15,7 @@ torch==1.9.0
 ninja
 cython
 pycocotools
+psutil
 git+https://github.com/ofekp/vision.git#egg=torchvision
 git+https://github.com/ofekp/efficientdet-pytorch.git#egg=effdet
 git+https://github.com/cocodataset/cocoapi.git#subdirectory=PythonAPI&egg=pycocotools

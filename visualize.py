@@ -56,8 +56,8 @@ class Visualize:
         vis_df = vis_df.reset_index(drop=True)
         class_ids = helpers.get_labels(vis_df)
         masks = helpers.get_masks(vis_df, target_dim=self.target_dim)
-        bounding_boxes = helpers.get_bounding_boxes(vis_df, masks)
-        class_ids, masks, bounding_boxes = helpers.remove_empty_masks(class_ids, masks, bounding_boxes)
+        class_ids, masks = helpers.remove_empty_masks(class_ids, masks)
+        bounding_boxes = helpers.get_bounding_boxes(masks)
         img = Image.open(common.get_image_path(self.main_folder_path, image_id, is_colab)).convert("RGB")
         img = helpers.rescale(img, target_dim=self.target_dim)
         self.show_image_data(img, class_ids, masks, bounding_boxes, figsize=figsize)
@@ -140,10 +140,12 @@ class Visualize:
 
         if self.dest_folder is None:
             plt.show()
+            plt.close()
         else:
             if not os.path.exists(self.dest_folder):
                 os.mkdir(self.dest_folder)
             plt.savefig(self.dest_folder + "/" + str(datetime.now().strftime("%Y%m%d-%H%M%S")) + '.png')
+            plt.close()
 
     def show_prediction_on_img(self, model, dataset, dataset_df, img_idx, is_colab, show_ground_truth=True, box_threshold=0.001, split_segments=False, grid_layout=False):
         if isinstance(dataset, imat_dataset.IMATDatasetH5PY) or isinstance(dataset, coco_dataset.COCODataset):

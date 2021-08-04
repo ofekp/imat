@@ -150,7 +150,7 @@ cat requirements.txt | xargs -n 1 -L 1 pip3 install
 **Train a new model**
 
 ```
-python train.py --load-model False --batch-size 6
+PYTORCH_JIT=0 python train.py --load-model False --batch-size 5 --num-epochs 30 --num-workers 1
 ```
 
 

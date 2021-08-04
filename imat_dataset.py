@@ -81,8 +81,16 @@ class IMATDataset(BaseDataset):
         if self.gather_statistics:
             self.inc_by(self.lock, self.total_mask_time, time.time() - mask_start_ts)
         
+        num_objs = len(labels)
+
+        image_id_idx = idx
+        # suppose all instances are not crowd
+        iscrowd = torch.zeros((num_objs,), dtype=torch.int64)
+
+        labels, masks = helpers.remove_empty_masks(labels, masks)
+
         box_start_ts = time.time()
-        boxes = helpers.get_bounding_boxes(vis_df, masks)
+        boxes = helpers.get_bounding_boxes(masks)
         try:
             for box in boxes:
                 assert not torch.any(torch.isnan(box))
@@ -90,17 +98,9 @@ class IMATDataset(BaseDataset):
             self.skipped_images.append(image_id)
             print("ERROR: Skipped image with id [{}] due to a BB exception [{}]".format(image_id, e))
             return
+        area = (boxes[:, 3] - boxes[:, 1]) * (boxes[:, 2] - boxes[:, 0])
         if self.gather_statistics:
             self.inc_by(self.lock, self.total_box_time, time.time() - box_start_ts)
-        
-        num_objs = len(labels)
-
-        image_id_idx = idx
-        area = (boxes[:, 3] - boxes[:, 1]) * (boxes[:, 2] - boxes[:, 0])
-        # suppose all instances are not crowd
-        iscrowd = torch.zeros((num_objs,), dtype=torch.int64)
-
-        labels, masks, boxes = helpers.remove_empty_masks(labels, masks, boxes)
 
         target = {}
         if "faster" in self.model_name:
