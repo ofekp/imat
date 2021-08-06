@@ -429,7 +429,7 @@ class Trainer:
         # dataset = torch.utils.data.Subset(dataset, indices[:-50])
         # dataset_test = torch.utils.data.Subset(dataset_test, indices[-50:])
 
-        self.log('Trainer initiallized. Device is [{}]'.format(self.device))
+        self.log('Trainer initialized. Device is [{}]'.format(self.device))
 
     def get_model_identifier(self):
         return 'dim_' + str(self.target_dim) + '_images_' + str(self.data_limit) + '_classes_' + str(self.num_classes)
@@ -501,7 +501,7 @@ class Trainer:
         self.model.eval()
         with torch.no_grad():
             img_idx = 0
-            # self.visualize.show_prediction_on_img(self.model, self.dataset_test, self.test_df, img_idx, self.is_colab, show_ground_truth=False, box_threshold=self.config.box_threshold, split_segments=True)
+            self.visualize.show_prediction_on_img(self.model, self.dataset_test, self.test_df, img_idx, self.is_colab, show_ground_truth=False, box_threshold=self.config.box_threshold, split_segments=False)
             # evaluate on the test dataset
             if "faster" in self.config.model_name:
                 # special case of training the conventional model based on Faster R-CNN

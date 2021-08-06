@@ -4,13 +4,21 @@ import torchvision.transforms as transforms
 
 
 def rescale(matrix, target_dim, pad_color=0, interpolation=Image.NEAREST):
-    mode = None
-    if isinstance(matrix, Image.Image):
+    is_pil_image = isinstance(matrix, Image.Image)
+    if is_pil_image:
+        # new_im = torch.zeros((3, target_dim, target_dim))
+        # return new_im
         mode = 'RGB'
-        matrix_img = matrix.copy()
+        # matrix_img = matrix.copy()
+        matrix_img = matrix
     else:
+        # dim_x = min(matrix.shape[0], target_dim)
+        # dim_y = min(matrix.shape[1], target_dim)
+        # new_im = torch.zeros((target_dim, target_dim))
+        # new_im[:dim_x, :dim_y] = matrix[:dim_x, :dim_y]
+        # return new_im
         mode = 'L'  # Luminance, single channel
-        matrix_img = transforms.ToPILImage(mode=mode)(matrix.clone())
+        matrix_img = transforms.ToPILImage(mode=mode)(matrix.detach().clone())
 
     if target_dim:
         orig_shape = matrix_img.size  # old_size[0] is in (width, height) format
@@ -26,11 +34,14 @@ def rescale(matrix, target_dim, pad_color=0, interpolation=Image.NEAREST):
     else:
         new_im = matrix_img
     
-    trans = transforms.ToTensor()
-    if isinstance(matrix, Image.Image):
-        return trans(new_im)
+    trans = transforms.ToTensor()  # note that PILToTensor does not work
+    res = trans(new_im)
+    new_im.close()
+    del new_im
+    if is_pil_image:
+        return res
     else:
-        return trans(new_im) * 255  # TODO(ofekp): note that masks will get this
+        return res * 255  # TODO(ofekp): note that masks will get this
 
 
 def get_labels(image_df):
@@ -70,7 +81,7 @@ def get_masks(image_df, target_dim=None):
         masks.append(mask)
 
     # there is a chance that the mask will be all zeros after the rescale if the object was too small
-    # do not skip inserting bad masks, they will be filtered lated by remove_empty_masks
+    # do not skip inserting bad masks, they will be filtered later by remove_empty_masks
     count_bad = 0
     for mask in masks:
         assert torch.min(mask) >= 0

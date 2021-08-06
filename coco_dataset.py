@@ -49,6 +49,9 @@ class COCODataset(BaseDataset):
                 avg_time_per_image))
 
     def __getitem__(self, idx):
+        # image_orig = Image.open(
+        #     common.get_image_path_coco(self.main_folder_path, self.is_train, img['file_name'], False)).convert("RGB")
+        # return image_orig, {}
         start = time.time()
         image_id = self.image_ids[idx]
         img = self.coco.loadImgs(image_id)[0]
@@ -80,7 +83,7 @@ class COCODataset(BaseDataset):
 
         masks = torch.stack(masks)
         if len(labels) == 0:
-            raise Exception("ERROR: Image with id [{}] has 0 labels after removal of small objects".format(image_id))
+            raise Exception("ERROR: Image with id [{}] has 0 labels as ground truth".format(image_id))
 
         labels, masks = helpers.remove_empty_masks(labels, masks)
         boxes = helpers.get_bounding_boxes(masks)
@@ -124,11 +127,13 @@ class COCODataset(BaseDataset):
 
         # image_orig = mpimg.imread(common.get_image_path_coco(self.images_folder, self.is_train, img['file_name'], False))
         image_orig = Image.open(common.get_image_path_coco(self.main_folder_path, self.is_train, img['file_name'], False)).convert("RGB")
+        # image_orig = Image.Image()
         image = helpers.rescale(image_orig, target_dim=self.target_dim)
         assert image.shape[0] == 3 and image.shape[1] == 512 and image.shape[2] == 512
 
         # TODO(ofekp): check what happens here when the image is < self.target_dim. What will helpers.py scale method do to the image in this case?
         target["img_size"] = image_orig.size[-2:] if self.target_dim is None else (self.target_dim, self.target_dim)
+        image_orig.close()
         image_orig_max_dim = max(target["img_size"])
         img_scale = self.target_dim / image_orig_max_dim
         target["img_scale"] = 1. / img_scale  # back to original size

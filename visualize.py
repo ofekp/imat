@@ -38,7 +38,7 @@ class Visualize:
             image_with_bb = np.zeros((height, width, 3))
         else:
             image_with_bb = np.zeros((self.target_dim, self.target_dim, 3))
-        
+
         for box, class_id in zip(bounding_boxes, labels):
             class_id = class_id.cpu().numpy()
             bbx.add(image_with_bb, *box, label=(self.get_label(class_id) if decode_labels else str(class_id)), font=font)
@@ -64,10 +64,11 @@ class Visualize:
         self.show_image_data(img, class_ids, masks, bounding_boxes, figsize=figsize)
 
     def show_image_data(self, img, class_ids, masks, bounding_boxes, figsize=(40, 40), split_segments=False, grid_layout=False):
+        plt.ioff()
         height = img.shape[2]
         width = img.shape[1]
         image_with_bb = self.get_image_bounding_boxes(height, width, bounding_boxes, class_ids)
-        
+
         if self.target_dim == None:
             mask = torch.zeros((height, width))
         else:
@@ -105,7 +106,6 @@ class Visualize:
                 c = i % 3
                 for curr_mask, class_id in zip(masks, class_ids):
                     curr_mask = curr_mask.cpu()
-                    class_id = class_id.cpu()
                     assert torch.min(curr_mask) >= 0.0
                     assert torch.max(curr_mask) <= 1.0
                     curr_mask = curr_mask.type(torch.FloatTensor)
@@ -127,7 +127,6 @@ class Visualize:
                 i = i
                 for curr_mask, class_id in zip(masks, class_ids):
                     curr_mask = curr_mask.cpu()
-                    class_id = class_id.cpu()
                     assert torch.min(curr_mask) >= 0.0
                     assert torch.max(curr_mask) <= 1.0
                     curr_mask = curr_mask.type(torch.FloatTensor)
@@ -141,22 +140,32 @@ class Visualize:
 
         if self.dest_folder is None:
             plt.show()
-            plt.close()
         else:
             if not os.path.exists(self.dest_folder):
                 os.mkdir(self.dest_folder)
             plt.savefig(self.dest_folder + "/" + str(datetime.now().strftime("%Y%m%d-%H%M%S")) + '.png')
-            plt.close()
+
+        for a in ax:
+            a.cla()
+            del a
+        plt.close(fig)
+        fig.clf()
+        fig.clear()
+        plt.cla()
+        plt.clf()
+        plt.close('all')
+        del ax
+        del fig
 
     def show_prediction_on_img(self, model, dataset, dataset_df, img_idx, is_colab, show_ground_truth=True, box_threshold=0.001, split_segments=False, grid_layout=False):
-        if isinstance(dataset, imat_dataset.IMATDatasetH5PY) or isinstance(dataset, coco_dataset.COCODataset):
-            img, _ = dataset.__getitem__(img_idx)
-        else:
-            img, _ = dataset[img_idx]
-        # img_formatted = img.mul(255).permute(1, 2, 0).byte().cpu().numpy()
-
         # put the model in evaluation mode
         with torch.no_grad():
+            if isinstance(dataset, imat_dataset.IMATDatasetH5PY) or isinstance(dataset, coco_dataset.COCODataset):
+                img, _ = dataset.__getitem__(img_idx)
+            else:
+                img, _ = dataset[img_idx]
+            # img_formatted = img.mul(255).permute(1, 2, 0).byte().cpu().numpy()
+
             device = next(model.parameters()).device
             if box_threshold is not None:
                 prediction = model([img.to(device)], box_threshold=box_threshold)
@@ -164,17 +173,17 @@ class Visualize:
                 # case of faster rcnn model
                 prediction = model([img.to(device)])
 
-        # TODO: coco will not work with show_ground_truth=True
-        # class_ids, masks, boxes = helpers.remove_empty_masks(class_ids, masks, boxes)
-        boxes = prediction[0]['boxes']
-        class_ids = prediction[0]['labels']
-        masks = prediction[0]['masks'][:, 0]
-        if show_ground_truth:
-            if isinstance(dataset, imat_dataset.IMATDatasetH5PY):
-                image_ids = dataset_df['ImageId'].unique()
-                image_id = dataset.dataset_h5py_reader.get_image_id(img_idx)
-                print(image_id)
-                self.show_image_data_ground_truth(dataset_df, image_ids[image_id], is_colab)
-            else:
-                self.show_image_data_ground_truth(dataset_df, dataset.image_ids[img_idx], is_colab)
-        self.show_image_data(img, class_ids, masks, boxes, split_segments=split_segments, grid_layout=grid_layout)
+            # TODO: coco will not work with show_ground_truth=True
+            # class_ids, masks, boxes = helpers.remove_empty_masks(class_ids, masks, boxes)
+            boxes = prediction[0]['boxes']
+            class_ids = prediction[0]['labels']
+            masks = prediction[0]['masks'][:, 0]
+            if show_ground_truth:
+                if isinstance(dataset, imat_dataset.IMATDatasetH5PY):
+                    image_ids = dataset_df['ImageId'].unique()
+                    image_id = dataset.dataset_h5py_reader.get_image_id(img_idx)
+                    print(image_id)
+                    self.show_image_data_ground_truth(dataset_df, image_ids[image_id], is_colab)
+                else:
+                    self.show_image_data_ground_truth(dataset_df, dataset.image_ids[img_idx], is_colab)
+            self.show_image_data(img, class_ids, masks, boxes, split_segments=split_segments, grid_layout=grid_layout)
