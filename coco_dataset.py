@@ -51,7 +51,28 @@ class COCODataset(BaseDataset):
     def __getitem__(self, idx):
         # image_orig = Image.open(
         #     common.get_image_path_coco(self.main_folder_path, self.is_train, img['file_name'], False)).convert("RGB")
-        # return image_orig, {}
+        # image = torch.zeros((3, 512, 512))
+        image_id = self.image_ids[idx]
+        img = self.coco.loadImgs(image_id)[0]
+        image_orig = Image.open(common.get_image_path_coco(self.main_folder_path, self.is_train, img['file_name'], False)).convert("RGB")
+        image = helpers.rescale(image_orig, target_dim=self.target_dim)
+        # annIds = self.coco.getAnnIds(imgIds=img['id'], iscrowd=None)
+        # anns = self.coco.loadAnns(annIds)
+        # labels = torch.tensor([int(ann['category_id']) for ann in anns], dtype=torch.int64)
+        # del annIds
+        # del anns
+        labels = torch.tensor([4, 1])
+        length = min(2, len(labels))
+        return image, {
+            'labels': labels[:length],
+            'masks': torch.ones(2, 512, 512, dtype=torch.uint8)[:length],
+            'boxes': torch.tensor([[0., 0., 512., 512.], [0., 0., 512., 512.]])[:length],
+            'area': torch.tensor([262144., 262144.])[:length],
+            'image_id': idx,
+            'iscrowd': torch.tensor([0, 0])[:length],
+            'img_size': (512, 512),
+            'img_scale': 1.0
+        }
         start = time.time()
         image_id = self.image_ids[idx]
         img = self.coco.loadImgs(image_id)[0]
