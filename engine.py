@@ -110,11 +110,11 @@ def evaluate(model, data_loader, device, box_threshold=0.001):
         else:
             outputs = model(images_gpu, box_threshold)
 
-        targets_cpu = [{k: v.to(cpu_device) if torch.is_tensor(v) else v for k, v in t.items()} for t in targets]
+        # targets_cpu = [{k: v.to(cpu_device) if torch.is_tensor(v) else v for k, v in t.items()} for t in targets]
         outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
         model_time = time.time() - model_time
 
-        res = {target["image_id"]: output for target, output in zip(targets_cpu, outputs)}  # ofekp: this used to be target["image_id"].item()
+        res = {target["image_id"]: output for target, output in zip(targets, outputs)}  # ofekp: this used to be target["image_id"].item()
         evaluator_time = time.time()
         coco_evaluator.update(res)
         evaluator_time = time.time() - evaluator_time
