@@ -24,7 +24,7 @@ pip install -r requirements.txt
 # Creating a new H5PY dataset
 
 While not a requirement, performing this step will greately improve training times.
-If you wish to skip this step, remeber to use `--h5py-dataset false` when training.
+If you wish to skip this step, remember to use `--h5py-dataset false` when training.
 
 # Default setting
 
@@ -154,3 +154,50 @@ PYTORCH_JIT=0 python train.py --load-model False --batch-size 5 --num-epochs 30 
 ```
 
 
+# memory leak
+
+```
+Memory usage 9 [66.3]
+Filename: /mnt/383231D23231963A/TAU MSc/Semester 4/Thesis/Project/Code/coco_eval.py
+
+Line #    Mem usage    Increment  Occurences   Line Contents
+============================================================
+    34   8356.2 MiB   8356.2 MiB           1       @profile
+    35                                             def update(self, predictions):
+    36   8356.2 MiB      0.0 MiB           1           img_ids = list(np.unique(list(predictions.keys())))
+    37   8356.2 MiB      0.0 MiB           1           self.img_ids.extend(img_ids)
+    38                                         
+    39   8407.9 MiB      0.0 MiB           3           for iou_type in self.iou_types:
+    40   8407.4 MiB     50.3 MiB           2               results = self.prepare(predictions, iou_type)
+    41   8407.7 MiB      0.5 MiB           2               coco_dt = loadRes(self.coco_gt, results) if results else COCO()
+    42   8407.7 MiB      0.0 MiB           2               coco_eval = self.coco_eval[iou_type]
+    43                                         
+    44   8407.7 MiB      0.0 MiB           2               coco_eval.cocoDt = coco_dt
+    45   8407.7 MiB      0.0 MiB           2               coco_eval.params.imgIds = list(img_ids)
+    46   8407.9 MiB      0.9 MiB           2               img_ids, eval_imgs = evaluate(coco_eval)
+    47                                         
+    48   8407.9 MiB      0.0 MiB           2               self.eval_imgs[iou_type].append(eval_imgs)
+
+
+Memory usage 9 [66.7]
+Filename: /mnt/383231D23231963A/TAU MSc/Semester 4/Thesis/Project/Code/coco_eval.py
+
+Line #    Mem usage    Increment  Occurences   Line Contents
+============================================================
+    34   8408.2 MiB   8408.2 MiB           1       @profile
+    35                                             def update(self, predictions):
+    36   8408.2 MiB      0.0 MiB           1           img_ids = list(np.unique(list(predictions.keys())))
+    37   8408.2 MiB      0.0 MiB           1           self.img_ids.extend(img_ids)
+    38                                         
+    39   8484.9 MiB      0.0 MiB           3           for iou_type in self.iou_types:
+    40   8484.1 MiB     75.2 MiB           2               results = self.prepare(predictions, iou_type)
+    41   8484.4 MiB      0.5 MiB           2               coco_dt = loadRes(self.coco_gt, results) if results else COCO()
+    42   8484.4 MiB      0.0 MiB           2               coco_eval = self.coco_eval[iou_type]
+    43                                         
+    44   8484.4 MiB      0.0 MiB           2               coco_eval.cocoDt = coco_dt
+    45   8484.4 MiB      0.0 MiB           2               coco_eval.params.imgIds = list(img_ids)
+    46   8484.9 MiB      1.0 MiB           2               img_ids, eval_imgs = evaluate(coco_eval)
+    47                                         
+    48   8484.9 MiB      0.0 MiB           2               self.eval_imgs[iou_type].append(eval_imgs)
+
+```

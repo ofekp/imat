@@ -27,6 +27,7 @@ import effdet
 from effdet import BiFpn, DetBenchTrain, EfficientDet, load_pretrained, load_pretrained, HeadNet
 import subprocess
 import sys
+from memory_profiler import profile
 import functools
 print = functools.partial(print, flush=True)
 
@@ -268,7 +269,7 @@ def freeze_bn(model):
     
 
 def get_model_instance_segmentation(num_classes):
-    '''
+    """
     This is the conventional model which is based on Faster R-CNN
     Note that to use this model you must install regular pytorch package (instead of from ofekp branch)
     and use '--model-name faster' in the arguments
@@ -278,7 +279,15 @@ def get_model_instance_segmentation(num_classes):
     To restore back to EfficientDet use:
         pip uninstall torchvision
         pip install git+https://github.com/ofekp/vision.git
-    '''
+
+    UPDATE 2021, to use this execute:
+        pip uninstall torch
+        pip uninstall torchvision
+        pip install torch
+        pip install torchvision
+        this will give torch 1.9.0, and vision of 0.10.0 which are compatible based on the table in
+        https://github.com/pytorch/vision
+    """
     print("Using Faster-RCNN detection model")
     # load an instance segmentation model pre-trained pre-trained on COCO
     model = torchvision.models.detection.maskrcnn_resnet50_fpn(pretrained=True)
@@ -497,6 +506,7 @@ class Trainer:
         print_nvidia_smi(self.device)
         self.dataset.show_stats()
 
+    @profile
     def eval_model(self, data_loader_test):
         self.model.eval()
         with torch.no_grad():

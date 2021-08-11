@@ -14,6 +14,7 @@ import pycocotools.mask as mask_util
 from collections import defaultdict
 
 import utils
+from memory_profiler import profile
 
 
 class CocoEvaluator(object):
@@ -30,6 +31,7 @@ class CocoEvaluator(object):
         self.img_ids = []
         self.eval_imgs = {k: [] for k in iou_types}
 
+    @profile
     def update(self, predictions):
         img_ids = list(np.unique(list(predictions.keys())))
         self.img_ids.extend(img_ids)
