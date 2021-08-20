@@ -3,11 +3,12 @@ import sys
 import time
 import torch
 import psutil
-import gc
 import torchvision.models.detection.mask_rcnn
 from coco_utils import get_coco_api_from_dataset
 from coco_eval import CocoEvaluator
 import utils
+from memory_profiler import profile
+
 
 def train_one_epoch(model, optimizer, data_loader, device, epoch, gradient_accumulation_steps, print_freq, box_threshold):
     model.train()
@@ -83,75 +84,83 @@ def _get_iou_types(model):
     return iou_types
 
 
-@torch.no_grad()
+@profile
 def evaluate(model, data_loader, device, box_threshold=0.1):
-    n_threads = torch.get_num_threads()
-    # FIXME remove this and make paste_masks_in_image run on the GPU
-    torch.set_num_threads(1)
-    cpu_device = torch.device("cpu")
-    model.eval()
-    metric_logger = utils.MetricLogger(delimiter="  ")
-    header = 'Test:'
+    with torch.no_grad():
+        n_threads = torch.get_num_threads()
+        # FIXME remove this and make paste_masks_in_image run on the GPU
+        torch.set_num_threads(1)
+        cpu_device = torch.device("cpu")
+        model.eval()
+        metric_logger = utils.MetricLogger(delimiter="  ")
+        header = 'Test:'
 
-    print("Memory usage 1 [{}] (0)".format(psutil.virtual_memory().percent), flush=True)
-    coco = get_coco_api_from_dataset(data_loader.dataset, box_threshold)
-    print("Memory usage 2 [{}] (0)".format(psutil.virtual_memory().percent), flush=True)
-    iou_types = _get_iou_types(model)
-    coco_evaluator = CocoEvaluator(coco, iou_types)
+        # print("Memory usage 1 [{}]".format(psutil.virtual_memory().percent), flush=True)
+        coco = get_coco_api_from_dataset(data_loader.dataset, box_threshold)
+        # print("Memory usage 2 [{}]".format(psutil.virtual_memory().percent), flush=True)
+        iou_types = _get_iou_types(model)
+        coco_evaluator = CocoEvaluator(coco, iou_types)
 
-    count = 0
-    print("Memory usage 3 [{}] (0)".format(psutil.virtual_memory().percent), flush=True)
-    for images, targets in metric_logger.log_every(data_loader, 100, header):
-        images_gpu = list(img.to(device) for img in images)
-        print("Memory usage 4 [{}] (0)".format(psutil.virtual_memory().percent), flush=True)
-        if torch.cuda.is_available():
-            torch.cuda.synchronize()
-        model_time = time.time()
-        if box_threshold is None:
-            outputs = model(images_gpu)
-        else:
-            outputs = model(images_gpu, box_threshold)
+        # print("Memory usage 3 [{}]".format(psutil.virtual_memory().percent), flush=True)
+        for images, targets in metric_logger.log_every(data_loader, 100, header):
+            if not one_iteration(device, images, box_threshold, model, cpu_device, targets, coco_evaluator, metric_logger):
+                break
+            del images
 
-        print("Memory usage 5 [{}] (0)".format(psutil.virtual_memory().percent), flush=True)
+        # gather the stats from all processes
+        metric_logger.synchronize_between_processes()
+        print("Averaged stats:", metric_logger)
+        coco_evaluator.synchronize_between_processes()
 
-        # targets_cpu = [{k: v.to(cpu_device) if torch.is_tensor(v) else v for k, v in t.items()} for t in targets]
-        outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
-        model_time = time.time() - model_time
+        # accumulate predictions from all images
+        coco_evaluator.accumulate()
+        coco_evaluator.summarize()
+        torch.set_num_threads(n_threads)
+        del coco
+        del coco_evaluator
+    return None
 
-        print("Memory usage 6 [{}] (0)".format(psutil.virtual_memory().percent), flush=True)
-        res = {target["image_id"]: output for target, output in zip(targets, outputs)}  # ofekp: this used to be target["image_id"].item()
-        evaluator_time = time.time()
-        print("Memory usage 7 [{}] (0)".format(psutil.virtual_memory().percent), flush=True)
-        coco_evaluator.update(res)
-        print("Memory usage 8 [{}] (0)".format(psutil.virtual_memory().percent), flush=True)
-        evaluator_time = time.time() - evaluator_time
-        metric_logger.update(model_time=model_time, evaluator_time=evaluator_time)
-        count += 1
-        # if count % 10 == 0:
-        #     print("Memory usage in eval [{}] ({})".format(psutil.virtual_memory().percent, count), flush=True)
 
-        print("Memory usage 9 [{}] (0)".format(psutil.virtual_memory().percent), flush=True)
-        if psutil.virtual_memory().percent > 90.0:
-            print("Memory usage too high! Exiting!")
-            break
+def one_iteration(device, images, box_threshold, model, cpu_device, targets, coco_evaluator, metric_logger):
+    images_gpu = list(img.to(device) for img in images)
+    # print("Memory usage 4 [{}]".format(psutil.virtual_memory().percent), flush=True)
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+    model_time = time.time()
+    if box_threshold is None:
+        outputs = model(images_gpu)
+    else:
+        outputs = model(images_gpu, box_threshold)
 
-        # gc.collect()
-        # for image_cpu in images_gpu:
-        #     del image_cpu
-        # for output in outputs:
-        #     for k in list(output.keys()):
-        #         del output[k]
-        # for target_cpu in targets_cpu:
-        #     for k in list(target_cpu.keys()):
-        #         del target_cpu[k]
+    # print("Memory usage 5 [{}]".format(psutil.virtual_memory().percent), flush=True)
 
-    # gather the stats from all processes
-    metric_logger.synchronize_between_processes()
-    print("Averaged stats:", metric_logger)
-    coco_evaluator.synchronize_between_processes()
+    # targets_cpu = [{k: v.to(cpu_device) if torch.is_tensor(v) else v for k, v in t.items()} for t in targets]
+    outputs = [{k: v.to(cpu_device) for k, v in t.items()} for t in outputs]
+    model_time = time.time() - model_time
 
-    # accumulate predictions from all images
-    coco_evaluator.accumulate()
-    coco_evaluator.summarize()
-    torch.set_num_threads(n_threads)
-    return coco_evaluator
+    # print("Memory usage 6 [{}]".format(psutil.virtual_memory().percent), flush=True)
+    res = {target["image_id"]: output for target, output in zip(targets, outputs)}  # ofekp: this used to be target["image_id"].item()
+    evaluator_time = time.time()
+    # print("Memory usage 7 [{}]".format(psutil.virtual_memory().percent), flush=True)
+    coco_evaluator.update(res)
+    # print("Memory usage 8 [{}]".format(psutil.virtual_memory().percent), flush=True)
+    evaluator_time = time.time() - evaluator_time
+    metric_logger.update(model_time=model_time, evaluator_time=evaluator_time)
+
+    print("Memory usage [{}]".format(psutil.virtual_memory().percent), flush=True)
+    if psutil.virtual_memory().percent > 90.0:
+        print("Memory usage too high! Exiting!")
+        return False
+
+    return True
+    # print("---");
+
+    # gc.collect()
+    # for image_cpu in images_gpu:
+    #     del image_cpu
+    # for output in outputs:
+    #     for k in list(output.keys()):
+    #         del output[k]
+    # for target_cpu in targets_cpu:
+    #     for k in list(target_cpu.keys()):
+    #         del target_cpu[k]

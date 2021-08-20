@@ -14,6 +14,7 @@ import pycocotools.mask as mask_util
 from collections import defaultdict
 
 import utils
+import sys
 from memory_profiler import profile
 
 
@@ -31,11 +32,12 @@ class CocoEvaluator(object):
         self.img_ids = []
         self.eval_imgs = {k: [] for k in iou_types}
 
-    @profile
     def update(self, predictions):
         img_ids = list(np.unique(list(predictions.keys())))
         self.img_ids.extend(img_ids)
-
+        # TODO(ofekp): delete this log
+        # for _, prediction in predictions.items():
+        #     print(prediction["labels"])
         for iou_type in self.iou_types:
             results = self.prepare(predictions, iou_type)
             coco_dt = loadRes(self.coco_gt, results) if results else COCO()
@@ -97,15 +99,22 @@ class CocoEvaluator(object):
 
     def prepare_for_coco_segmentation(self, predictions):
         coco_results = []
+        count_masks = 0
+        memory_usage = 0
         for original_id, prediction in predictions.items():
             if len(prediction) == 0:
                 continue
 
-            scores = prediction["scores"]
-            labels = prediction["labels"]
+            # scores = prediction["scores"]
+            # labels = prediction["labels"]
             masks = prediction["masks"]
 
-            masks = masks > 0.5
+            for i, mask in enumerate(masks):
+                # print("Shape of mask [{}] [{}]".format(i, mask.shape))
+                count_masks += 1
+            memory_usage += sys.getsizeof(masks.storage())
+            masks = masks - 0.5
+            masks = torch.gt(masks, 0.0)
 
             scores = prediction["scores"].tolist()
             labels = prediction["labels"].tolist()
@@ -116,6 +125,8 @@ class CocoEvaluator(object):
             ]
             for rle in rles:
                 rle["counts"] = rle["counts"].decode("utf-8")
+
+            del masks
 
             coco_results.extend(
                 [
@@ -128,6 +139,7 @@ class CocoEvaluator(object):
                     for k, rle in enumerate(rles)
                 ]
             )
+        print("Found [{}] masks with memory usage of [{} MB]".format(count_masks, memory_usage / 1024 / 1024))
         return coco_results
 
     def prepare_for_coco_keypoint(self, predictions):

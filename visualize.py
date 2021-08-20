@@ -8,12 +8,16 @@ from datetime import datetime
 import os
 import torch
 import matplotlib.pyplot as plt
+from matplotlib import figure
 import imat_dataset
 import common
 import math
+from memory_profiler import profile
 
 font = bbx.get_font_with_size(10)
 
+
+@profile
 class Visualize:
     def __init__(self, main_folder_path, categories_df, target_dim, dest_folder=None):
         self.main_folder_path = main_folder_path
@@ -64,7 +68,6 @@ class Visualize:
         self.show_image_data(img, class_ids, masks, bounding_boxes, figsize=figsize)
 
     def show_image_data(self, img, class_ids, masks, bounding_boxes, figsize=(40, 40), split_segments=False, grid_layout=False):
-        plt.ioff()
         height = img.shape[2]
         width = img.shape[1]
         image_with_bb = self.get_image_bounding_boxes(height, width, bounding_boxes, class_ids)
@@ -77,21 +80,26 @@ class Visualize:
         # generate the segments mask with colors
         if masks is not None:
             for i, (curr_mask, class_id) in enumerate(zip(masks, class_ids)):
-                curr_mask = curr_mask.cpu()
-                class_id = class_id.cpu()
                 assert torch.min(curr_mask) >= 0.0
                 assert torch.max(curr_mask) <= 1.0
+                curr_mask = curr_mask.cpu()
+                class_id = class_id.cpu()
                 curr_mask = curr_mask.type(torch.FloatTensor)
                 mask = torch.where(curr_mask == 0, mask, curr_mask * (255 - 4 * class_id))
 
         if not split_segments:
-            fig, ax = plt.subplots(nrows=1, ncols=3, figsize=figsize)
-            ax[0].imshow(img.permute(1, 2, 0))
+            fig = figure.Figure(figsize=figsize)
+            ax = fig.subplots(nrows=1, ncols=3)
+            # next line causes memory leak of around 180 MB
+            # refer to https://stackoverflow.com/questions/7125710/matplotlib-errors-result-in-a-memory-leak-how-can-i-free-up-that-memory
+            # fig, ax = plt.subplots(nrows=1, ncols=3, figsize=figsize)
+            img = img.permute(1, 2, 0)
+            ax[0].imshow(img)
             ax[0].axis('off')
-            ax[1].imshow(img.permute(1, 2, 0))
+            ax[1].imshow(img)
             ax[1].imshow(mask, alpha=0.7)
             ax[1].axis('off')
-            ax[2].imshow(img.permute(1, 2, 0))
+            ax[2].imshow(img)
             ax[2].imshow(image_with_bb)
             ax[2].axis('off')
         else:
@@ -105,9 +113,9 @@ class Visualize:
                 r = int(i / 3)
                 c = i % 3
                 for curr_mask, class_id in zip(masks, class_ids):
-                    curr_mask = curr_mask.cpu()
                     assert torch.min(curr_mask) >= 0.0
                     assert torch.max(curr_mask) <= 1.0
+                    curr_mask = curr_mask.cpu()
                     curr_mask = curr_mask.type(torch.FloatTensor)
                     ax[r, c].imshow(img.permute(1, 2, 0))
                     ax[r, c].imshow(curr_mask, alpha=0.7)
@@ -143,47 +151,46 @@ class Visualize:
         else:
             if not os.path.exists(self.dest_folder):
                 os.mkdir(self.dest_folder)
-            plt.savefig(self.dest_folder + "/" + str(datetime.now().strftime("%Y%m%d-%H%M%S")) + '.png')
+            fig.savefig(self.dest_folder + "/" + str(datetime.now().strftime("%Y%m%d-%H%M%S")) + '.png')
 
-        for a in ax:
-            a.cla()
-            del a
-        plt.close(fig)
-        fig.clf()
-        fig.clear()
-        plt.cla()
-        plt.clf()
-        plt.close('all')
-        del ax
-        del fig
+        # for a in ax:
+        #     a.cla()
+        #     del a
+        # plt.close(fig)
+        # fig.clear()
+        # plt.cla()
+        # plt.clf()
+        # plt.close('all')
+        # del ax
+        # del fig
+        # plt.close()
 
     def show_prediction_on_img(self, model, dataset, dataset_df, img_idx, is_colab, show_ground_truth=True, box_threshold=0.001, split_segments=False, grid_layout=False):
         # put the model in evaluation mode
-        with torch.no_grad():
-            if isinstance(dataset, imat_dataset.IMATDatasetH5PY) or isinstance(dataset, coco_dataset.COCODataset):
-                img, _ = dataset.__getitem__(img_idx)
-            else:
-                img, _ = dataset[img_idx]
-            # img_formatted = img.mul(255).permute(1, 2, 0).byte().cpu().numpy()
+        if isinstance(dataset, imat_dataset.IMATDatasetH5PY) or isinstance(dataset, coco_dataset.COCODataset):
+            img, _ = dataset.__getitem__(img_idx)
+        else:
+            img, _ = dataset[img_idx]
+        # img_formatted = img.mul(255).permute(1, 2, 0).byte().cpu().numpy()
 
-            device = next(model.parameters()).device
-            if box_threshold is not None:
-                prediction = model([img.to(device)], box_threshold=box_threshold)
-            else:
-                # case of faster rcnn model
-                prediction = model([img.to(device)])
+        device = next(model.parameters()).device
+        if box_threshold is not None:
+            prediction = model([img.to(device)], box_threshold=box_threshold)
+        else:
+            # case of faster rcnn model
+            prediction = model([img.to(device)])
 
-            # TODO: coco will not work with show_ground_truth=True
-            # class_ids, masks, boxes = helpers.remove_empty_masks(class_ids, masks, boxes)
-            boxes = prediction[0]['boxes']
-            class_ids = prediction[0]['labels']
-            masks = prediction[0]['masks'][:, 0]
-            if show_ground_truth:
-                if isinstance(dataset, imat_dataset.IMATDatasetH5PY):
-                    image_ids = dataset_df['ImageId'].unique()
-                    image_id = dataset.dataset_h5py_reader.get_image_id(img_idx)
-                    print(image_id)
-                    self.show_image_data_ground_truth(dataset_df, image_ids[image_id], is_colab)
-                else:
-                    self.show_image_data_ground_truth(dataset_df, dataset.image_ids[img_idx], is_colab)
-            self.show_image_data(img, class_ids, masks, boxes, split_segments=split_segments, grid_layout=grid_layout)
+        # TODO: coco will not work with show_ground_truth=True
+        # class_ids, masks, boxes = helpers.remove_empty_masks(class_ids, masks, boxes)
+        boxes = prediction[0]['boxes']
+        class_ids = prediction[0]['labels']
+        masks = prediction[0]['masks'][:, 0]
+        if show_ground_truth:
+            if isinstance(dataset, imat_dataset.IMATDatasetH5PY):
+                image_ids = dataset_df['ImageId'].unique()
+                image_id = dataset.dataset_h5py_reader.get_image_id(img_idx)
+                print(image_id)
+                self.show_image_data_ground_truth(dataset_df, image_ids[image_id], is_colab)
+            else:
+                self.show_image_data_ground_truth(dataset_df, dataset.image_ids[img_idx], is_colab)
+        self.show_image_data(img, class_ids, masks, boxes, split_segments=split_segments, grid_layout=grid_layout)

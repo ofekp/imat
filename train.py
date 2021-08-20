@@ -22,7 +22,7 @@ import transforms as T
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 from torchvision.models.detection.mask_rcnn import MaskRCNNPredictor, MaskRCNN
 from torchvision.ops import MultiScaleRoIAlign
-import coco_utils, coco_eval, engine, utils
+import engine, utils
 import effdet
 from effdet import BiFpn, DetBenchTrain, EfficientDet, load_pretrained, load_pretrained, HeadNet
 import subprocess
@@ -508,6 +508,7 @@ class Trainer:
 
     @profile
     def eval_model(self, data_loader_test):
+        print("Memory usage before starting eval [{}]".format(psutil.virtual_memory().percent), flush=True)
         self.model.eval()
         with torch.no_grad():
             img_idx = 0
@@ -518,6 +519,7 @@ class Trainer:
                 engine.evaluate(self.model, data_loader_test, device=self.device, box_threshold=None)
             else:
                 engine.evaluate(self.model, data_loader_test, device=self.device)
+            print("Memory usage after eval [{}]".format(psutil.virtual_memory().percent), flush=True)
                 
     def log(self, message):
         if self.config.verbose:
@@ -535,7 +537,7 @@ class Trainer:
             self.dataset_test, batch_size=self.config.batch_size, shuffle=False, num_workers=self.config.num_workers,
             collate_fn=utils.collate_fn)
 
-        # self.eval_model(data_loader_test)  # TODO: remove this line
+        self.eval_model(data_loader_test)  # TODO: remove this line
 
         for _ in range(self.config.num_epochs):
             # train one epoch
