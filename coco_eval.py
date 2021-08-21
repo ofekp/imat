@@ -16,6 +16,7 @@ from collections import defaultdict
 import utils
 import sys
 from memory_profiler import profile
+import psutil
 
 
 class CocoEvaluator(object):
@@ -38,8 +39,11 @@ class CocoEvaluator(object):
         # TODO(ofekp): delete this log
         # for _, prediction in predictions.items():
         #     print(prediction["labels"])
+        diff = 0
         for iou_type in self.iou_types:
-            results = self.prepare(predictions, iou_type)
+            results, seg_diff = self.prepare(predictions, iou_type)
+            if seg_diff is not None:
+                diff += seg_diff
             coco_dt = loadRes(self.coco_gt, results) if results else COCO()
             coco_eval = self.coco_eval[iou_type]
 
@@ -48,6 +52,7 @@ class CocoEvaluator(object):
             img_ids, eval_imgs = evaluate(coco_eval)
 
             self.eval_imgs[iou_type].append(eval_imgs)
+        return diff
 
     def synchronize_between_processes(self):
         for iou_type in self.iou_types:
@@ -69,12 +74,14 @@ class CocoEvaluator(object):
         elif iou_type == "segm":
             return self.prepare_for_coco_segmentation(predictions)
         elif iou_type == "keypoints":
-            return self.prepare_for_coco_keypoint(predictions)
+            return self.prepare_for_coco_keypoint(predictions), None
         else:
             raise ValueError("Unknown iou type {}".format(iou_type))
 
     def prepare_for_coco_detection(self, predictions):
+        mu_iter = psutil.virtual_memory().percent
         coco_results = []
+        diff = 0
         for original_id, prediction in predictions.items():
             if len(prediction) == 0:
                 continue
@@ -95,12 +102,16 @@ class CocoEvaluator(object):
                     for k, box in enumerate(boxes)
                 ]
             )
-        return coco_results
+            # diff += (psutil.virtual_memory().percent - mu_iter)
+        return coco_results, (psutil.virtual_memory().percent - mu_iter)
 
+    # @profile
     def prepare_for_coco_segmentation(self, predictions):
+        mu_iter = psutil.virtual_memory().percent
         coco_results = []
         count_masks = 0
-        memory_usage = 0
+        # memory_usage = 0
+        diff = 0
         for original_id, prediction in predictions.items():
             if len(prediction) == 0:
                 continue
@@ -109,12 +120,11 @@ class CocoEvaluator(object):
             # labels = prediction["labels"]
             masks = prediction["masks"]
 
-            for i, mask in enumerate(masks):
-                # print("Shape of mask [{}] [{}]".format(i, mask.shape))
-                count_masks += 1
-            memory_usage += sys.getsizeof(masks.storage())
-            masks = masks - 0.5
-            masks = torch.gt(masks, 0.0)
+            # for i, mask in enumerate(masks):
+            #     # print("Shape of mask [{}] [{}]".format(i, mask.shape))
+            #     count_masks += 1
+            # memory_usage += sys.getsizeof(masks.storage())
+            masks = torch.gt(masks, 0.5)
 
             scores = prediction["scores"].tolist()
             labels = prediction["labels"].tolist()
@@ -125,8 +135,6 @@ class CocoEvaluator(object):
             ]
             for rle in rles:
                 rle["counts"] = rle["counts"].decode("utf-8")
-
-            del masks
 
             coco_results.extend(
                 [
@@ -139,8 +147,9 @@ class CocoEvaluator(object):
                     for k, rle in enumerate(rles)
                 ]
             )
-        print("Found [{}] masks with memory usage of [{} MB]".format(count_masks, memory_usage / 1024 / 1024))
-        return coco_results
+            # diff += (psutil.virtual_memory().percent - mu_iter)
+        # print("Found [{}] masks with memory usage of [{} MB]".format(count_masks, memory_usage / 1024 / 1024))
+        return coco_results, (psutil.virtual_memory().percent - mu_iter)
 
     def prepare_for_coco_keypoint(self, predictions):
         coco_results = []

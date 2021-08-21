@@ -153,7 +153,7 @@ def convert_to_coco_api(ds, box_threshold):
         # find better way to get target
         # targets = ds.get_annotations(img_idx)
         img, targets = ds[img_idx]
-        image_id = targets["image_id"]  # ofekp: this used to be `targets["image_id"].item()` but image_id is no longer tensor in IMATDataset
+        image_id = targets["image_id"].item()  # ofekp: this used to be `targets["image_id"].item()` but image_id is no longer tensor in IMATDataset
         img_dict = {}
         img_dict['id'] = image_id
         img_dict['height'] = img.shape[-2]

@@ -10,7 +10,7 @@ from memory_profiler import profile
 
 
 class COCODataset(BaseDataset):
-    def __init__(self, coco, is_train, model_name, main_folder_path, target_dim, num_classes, transforms, is_colab, gather_statistics=True):
+    def __init__(self, coco, is_train, model_name, main_folder_path, target_dim, num_classes, transforms, is_colab, gather_statistics=False):
         self.main_folder_path = main_folder_path
         self.is_train = is_train
         self.coco = coco
@@ -54,36 +54,37 @@ class COCODataset(BaseDataset):
         # img = self.coco.loadImgs(image_id)[0]
         # image_orig = Image.open(common.get_image_path_coco(self.main_folder_path, self.is_train, img['file_name'], False)).convert("RGB")
         # image = helpers.rescale(image_orig, target_dim=self.target_dim)
-        # annIds = self.coco.getAnnIds(imgIds=img['id'], iscrowd=None)
-        # anns = self.coco.loadAnns(annIds)
-        # masks = []
-        # for ann in anns:
-        #     orig_img_height = img['height']
-        #     orig_img_width = img['width']
-        #     mask = np.zeros((orig_img_height, orig_img_width))
-        #     mask = np.maximum(self.coco.annToMask(ann), mask)
-        #     assert mask.shape[0] == orig_img_height and mask.shape[1] == orig_img_width
-        #     mask = torch.tensor(mask.reshape(orig_img_height, orig_img_width, order='F'), dtype=torch.uint8)
-        #     assert mask.shape[0] == orig_img_height and mask.shape[1] == orig_img_width
-        #     mask = helpers.rescale(mask, self.target_dim).reshape(self.target_dim, self.target_dim).type(
-        #         torch.ByteTensor)  # masks should have dtype=torch.uint8
-        #     assert mask.shape[0] == 512 and mask.shape[1] == 512
-        #     mask = mask.squeeze()
-        #     masks.append(mask)
-        #
-        # masks = torch.stack(masks)
-        # labels = torch.tensor([int(ann['category_id']) for ann in anns], dtype=torch.int64)
-        # del annIds
-        # del anns
-        # # labels = torch.tensor([4, 1])
-        # length = min(2, len(labels))
+        # # annIds = self.coco.getAnnIds(imgIds=img['id'], iscrowd=None)
+        # # anns = self.coco.loadAnns(annIds)
+        # # masks = []
+        # # for ann in anns:
+        # #     orig_img_height = img['height']
+        # #     orig_img_width = img['width']
+        # #     mask = np.zeros((orig_img_height, orig_img_width))
+        # #     mask = np.maximum(self.coco.annToMask(ann), mask)
+        # #     assert mask.shape[0] == orig_img_height and mask.shape[1] == orig_img_width
+        # #     mask = torch.tensor(mask.reshape(orig_img_height, orig_img_width, order='F'), dtype=torch.uint8)
+        # #     assert mask.shape[0] == orig_img_height and mask.shape[1] == orig_img_width
+        # #     mask = helpers.rescale(mask, self.target_dim).reshape(self.target_dim, self.target_dim).type(
+        # #         torch.ByteTensor)  # masks should have dtype=torch.uint8
+        # #     assert mask.shape[0] == 512 and mask.shape[1] == 512
+        # #     mask = mask.squeeze()
+        # #     masks.append(mask)
+        # #
+        # # masks = torch.stack(masks)
+        # # labels = torch.tensor([int(ann['category_id']) for ann in anns], dtype=torch.int64)
+        # # del annIds
+        # # del anns
+        # labels = torch.tensor([1] * 40)
+        # # length = min(2, len(labels))
+        # length = 40
         # return image, {
         #     'labels': labels[:length],
-        #     'masks': masks[:length], # torch.ones(2, 512, 512, dtype=torch.uint8)[:length],
-        #     'boxes': torch.tensor([[0., 0., 512., 512.], [0., 0., 512., 512.]])[:length],
-        #     'area': torch.tensor([262144., 262144.])[:length],
+        #     'masks': torch.ones(40, 512, 512, dtype=torch.uint8)[:length],  # masks[:length]
+        #     'boxes': torch.tensor([[0., 0., 512., 512.]] * 40)[:length],
+        #     'area': torch.tensor([262144.] * 40)[:length],
         #     'image_id': idx,
-        #     'iscrowd': torch.tensor([0, 0])[:length],
+        #     'iscrowd': torch.tensor([0] * 40)[:length],
         #     'img_size': (512, 512),
         #     'img_scale': 1.0
         # }
@@ -96,8 +97,9 @@ class COCODataset(BaseDataset):
         if len(labels) == 0:
             raise Exception("Image with index [{}] has 0 labels as ground truth".format(idx))
         # bounding_boxes = []
-        masks = []
-        for ann in anns:
+        # masks = []
+        masks = torch.empty((len(anns), self.target_dim, self.target_dim), dtype=torch.uint8)
+        for i, ann in enumerate(anns):
             # bb = ann['bbox']
             # x_left = bb[0]
             # y_top = bb[1]
@@ -114,9 +116,11 @@ class COCODataset(BaseDataset):
             mask = helpers.rescale(mask, self.target_dim).reshape(self.target_dim, self.target_dim).type(torch.ByteTensor)  # masks should have dtype=torch.uint8
             assert mask.shape[0] == 512 and mask.shape[1] == 512
             mask = mask.squeeze()
-            masks.append(mask)
+            # print(mask.shape)
+            # masks.append(mask)
+            masks[i] = mask
 
-        masks = torch.stack(masks)
+        # masks = torch.stack(masks)
         if len(labels) == 0:
             raise Exception("ERROR: Image with id [{}] has 0 labels as ground truth".format(image_id))
 
@@ -156,7 +160,7 @@ class COCODataset(BaseDataset):
             assert torch.max(target["labels"]) <= self.num_classes
         target["masks"] = masks
         target["boxes"] = boxes
-        target["image_id"] = idx
+        target["image_id"] = torch.tensor([idx])
         target["area"] = area
         target["iscrowd"] = torch.zeros((len(labels),), dtype=torch.int64)
 
