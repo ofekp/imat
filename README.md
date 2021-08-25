@@ -78,7 +78,7 @@ conda install nb_conda  # this will add conda capabilities to jupyter notebooks
 mkdir Project
 cd Project
 mkdir Data
-git clone https://github.com/ofekp/imat.git Code
+git clone git@github.com:ofekp/imat.git Code
 cd ..
 ln -s Project/Code code
 cd Project
