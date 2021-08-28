@@ -29,6 +29,7 @@ from PIL import Image
 import h5py
 import imat_dataset
 import argparse
+import coco_dataset
 
 # imports for segmentation
 from torch.utils.data import DataLoader
@@ -55,6 +56,9 @@ parser.add_argument('--target-dim', type=int, default=512, metavar='DIM',
                     help='Dimention of the images. It is vital that the image size will be devisiable by 2 at least 6 times (default=512)')
 parser.add_argument('--delete-existing', type=bool, default=False, metavar='BOOL',
                     help='Delete existing H5PY files, if False will only add more data to the file (default=False)')
+parser.add_argument('--coco-dataset', type=train.str2bool, default=True, metavar='BOOL',
+                    help='Use COCO dataset (default=True)')
+MAX_NUM_OF_INSTANCES = 85
 
 
 def parse_args():
@@ -76,7 +80,7 @@ class DatasetH5Writer(torch.utils.data.Dataset):
         self.file_name = out_file
         self.cpu_count = multiprocessing.cpu_count()
         self.delete_existing = delete_existing
-        requires_init = False
+        requires_init = True
         if os.path.exists(self.file_name):
             if self.delete_existing:
                 os.remove(self.file_name)
@@ -86,12 +90,12 @@ class DatasetH5Writer(torch.utils.data.Dataset):
         
         self.h5py_file = h5py.File(self.file_name, "a")
         if requires_init:
-            self.image_ids_data_set = self.h5py_file.create_dataset("image_ids", shape=(0,), dtype=np.uint64, maxshape=(None,), chunks=(self.chunk_size,))
-            self.images_data_set = self.h5py_file.create_dataset("images", shape=(0,3,self.target_dim,self.target_dim), dtype=np.float64, maxshape=(None,3,self.target_dim,self.target_dim), chunks=(self.chunk_size,3,self.target_dim,self.target_dim))
+            self.image_ids_data_set = self.h5py_file.create_dataset("image_ids", shape=(0,), dtype=np.uint64, maxshape=(None,), chunks=(self.chunk_size,))  # compression="lzf"
+            self.images_data_set = self.h5py_file.create_dataset("images", shape=(0,3,self.target_dim,self.target_dim), dtype=np.float64, maxshape=(None,3,self.target_dim,self.target_dim), chunks=(self.chunk_size,3,self.target_dim,self.target_dim))  # compression="lzf"
             dt = h5py.vlen_dtype(np.dtype('int64'))
-            self.labels_data_set = self.h5py_file.create_dataset("labels", shape=(0,), maxshape=(None,), dtype=dt, chunks=(self.chunk_size,))
-            self.masks_data_set = self.h5py_file.create_dataset("masks", shape=(0,75,self.target_dim,self.target_dim), maxshape=(None,75,512,512), dtype=np.uint8, chunks=(self.chunk_size,75,self.target_dim,self.target_dim))
-            self.boxes_data_set = self.h5py_file.create_dataset("boxes", shape=(0,75,4), maxshape=(None,75,4), dtype=np.float64, chunks=(self.chunk_size,75,4))
+            self.labels_data_set = self.h5py_file.create_dataset("labels", shape=(0,), maxshape=(None,), dtype=dt, chunks=(self.chunk_size,))  # compression="lzf"
+            self.masks_data_set = self.h5py_file.create_dataset("masks", shape=(0,MAX_NUM_OF_INSTANCES,self.target_dim,self.target_dim), maxshape=(None,MAX_NUM_OF_INSTANCES,512,512), dtype=np.uint8, chunks=(self.chunk_size,MAX_NUM_OF_INSTANCES,self.target_dim,self.target_dim))  # compression="lzf"
+            self.boxes_data_set = self.h5py_file.create_dataset("boxes", shape=(0,MAX_NUM_OF_INSTANCES,4), maxshape=(None,MAX_NUM_OF_INSTANCES,4), dtype=np.float64, chunks=(self.chunk_size,MAX_NUM_OF_INSTANCES,4))  # compression="lzf"
         else:
             self.image_ids_data_set = self.h5py_file['image_ids']
             self.images_data_set = self.h5py_file['images']
@@ -169,20 +173,22 @@ class DatasetH5Writer(torch.utils.data.Dataset):
                 break
         images_numpy = DatasetH5Writer.tensor_list_to_numpy(images)
         image_ids_numpy = np.array(image_ids)
-        masks_numpy_fixed_size = np.zeros((curr_chunk_size, 75, target_dim, target_dim), dtype=np.uint8)
+        masks_numpy_fixed_size = np.zeros((curr_chunk_size, MAX_NUM_OF_INSTANCES, target_dim, target_dim), dtype=np.uint8)
         for i, masks_numpy in enumerate(masks_numpy_list):
             for j, mask in enumerate(masks_numpy):
                 masks_numpy_fixed_size[i, j, :, :] = mask
-        boxes_numpy_fixed_size = np.zeros((curr_chunk_size, 75, 4), dtype=np.float64)
+        boxes_numpy_fixed_size = np.zeros((curr_chunk_size, MAX_NUM_OF_INSTANCES, 4), dtype=np.float64)
         for i, boxes_numpy in enumerate(boxes_numpy_list):
             for j, box in enumerate(boxes_numpy):
                 boxes_numpy_fixed_size[i, j, :] = box
         return (curr_chunk_size, images_numpy, image_ids_numpy, labels_numpy_list, masks_numpy_fixed_size, boxes_numpy_fixed_size)
 
     def process(self, debug=False):
-        print("CPU count is [{}]".format(self.cpu_count))
+        # num_threads = self.cpu_count - 1
+        num_threads = 8
+        print("Thread count is [{}]".format(str(num_threads)))
         print("Started writing [{}]...".format(self.file_name))
-        pool = multiprocessing.Pool(self.cpu_count - 1)
+        pool = multiprocessing.Pool(num_threads)
         queue = multiprocessing.Queue()
         idx = self.start_idx
         results = []
@@ -223,15 +229,27 @@ def main():
     print("Args: {}".format(args_text))
 
     main_folder_path = '../'
-    num_classes, train_df, test_df, categories_df = train.process_data(main_folder_path, args.data_limit)
+    if args.coco_dataset:
+        # currently data limit has no effect here on coco dataset 
+        num_classes, train_df, test_df, categories_df = train.process_data_coco(main_folder_path, args.data_limit)
+    else:
+        num_classes, train_df, test_df, categories_df = train.process_data(main_folder_path, args.data_limit)
 
-    dataset_test = imat_dataset.IMATDataset(main_folder_path, test_df, num_classes, args.target_dim, "effdet", False, T.get_transform(train=False), gather_statistics=False)
-    h5_test_writer = DatasetH5Writer(dataset_test, args.target_dim, "../imaterialist_test_" + str(args.target_dim) + ".hdf5", chunk_size=args.chunk_size, delete_existing=args.delete_existing)
+    if args.coco_dataset:
+        dataset_test = coco_dataset.COCODataset(test_df, False, "effdet", main_folder_path, args.target_dim, num_classes,T.get_transform(train=False), False)
+    else:
+        dataset_test = imat_dataset.IMATDataset(main_folder_path, test_df, num_classes, args.target_dim, "effdet", False, T.get_transform(train=False), gather_statistics=False)
+    # h5_test_writer = DatasetH5Writer(dataset_test, args.target_dim, "../imaterialist_test_" + str(args.target_dim) + ".hdf5", chunk_size=args.chunk_size, delete_existing=args.delete_existing)
+    h5_test_writer = DatasetH5Writer(dataset_test, args.target_dim, "/data/dataset/COCO_2017_H5PY/coco_test_" + str(args.target_dim) + ".hdf5", chunk_size=args.chunk_size, delete_existing=args.delete_existing)
     h5_test_writer.process()
     h5_test_writer.close()
 
-    dataset = imat_dataset.IMATDataset(main_folder_path, train_df, num_classes, args.target_dim, False, "effdet", T.get_transform(train=False), gather_statistics=False)
-    h5_writer = DatasetH5Writer(dataset, args.target_dim, "../imaterialist_" + str(args.target_dim) + ".hdf5", chunk_size=args.chunk_size, delete_existing=args.delete_existing)
+    if args.coco_dataset:
+        dataset = coco_dataset.COCODataset(train_df, True, "effdet", main_folder_path, args.target_dim, num_classes, T.get_transform(train=True), False)
+    else:
+        dataset = imat_dataset.IMATDataset(main_folder_path, train_df, num_classes, args.target_dim, False, "effdet", T.get_transform(train=False), gather_statistics=False)
+    # h5_writer = DatasetH5Writer(dataset, args.target_dim, "../imaterialist_" + str(args.target_dim) + ".hdf5", chunk_size=args.chunk_size, delete_existing=args.delete_existing)
+    h5_writer = DatasetH5Writer(dataset, args.target_dim, "/data/dataset/COCO_2017_H5PY/coco_" + str(args.target_dim) + ".hdf5", chunk_size=args.chunk_size, delete_existing=args.delete_existing)
     h5_writer.process()
     h5_writer.close()
 

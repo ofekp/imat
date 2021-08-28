@@ -231,7 +231,7 @@ class IMATDatasetH5PY(BaseDataset):
         num_objs = target["labels"].shape[0]
         target["masks"] = torch.from_numpy(masks[0:num_objs]).type(torch.uint8)
         target["boxes"] = torch.from_numpy(boxes[0:num_objs]).float()
-        target["image_id"] = idx
+        target["image_id"] = torch.tensor([idx])
         area = (target["boxes"][:, 3] - target["boxes"][:, 1]) * (target["boxes"][:, 2] - target["boxes"][:, 0])
         target["area"] = area  # TODO(ofekp): where is this being used and should it be a tensor?
         iscrowd = torch.zeros((num_objs,), dtype=torch.int64)

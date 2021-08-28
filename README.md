@@ -144,13 +144,43 @@ project
 
 **Install requirements**
 ```
-cat requirements.txt | xargs -n 1 -L 1 pip3 install
+conda activate effdet
+conda install pip
+cat requirements.txt | xargs -n 1 -L 1 /home/ofek/.conda/envs/effdet/bin/pip3 install
+/home/ofek/.conda/envs/faster/bin/pip3 install memory_profiler
+```
+
+the same should be done for the env of Faster-RCNN
+```
+conda activate faster
+conda install pip
+cat requirements.txt | xargs -n 1 -L 1 /home/ofek/.conda/envs/faster/bin/pip3 install
+/home/ofek/.conda/envs/faster/bin/pip3 install memory_profiler
+/home/ofek/.conda/envs/faster/bin/pip3 uninstall torch
+/home/ofek/.conda/envs/faster/bin/pip3 uninstall torchvision
+/home/ofek/.conda/envs/faster/bin/pip3 install torch
+/home/ofek/.conda/envs/faster/bin/pip3 install torchvision
+```
+
+Prepare H5PY dataset
+```
+CUDA_VISIBLE_DEVICES=0 PYTORCH_JIT=0 python3 h5py_dataset_writer.py
 ```
 
 **Train a new model**
 
 ```
-PYTORCH_JIT=0 python train.py --load-model False --batch-size 5 --num-epochs 30 --num-workers 1
+PYTORCH_JIT=0 python train.py --load-model false --batch-size 5 --num-epochs 30 --num-workers 1
+```
+
+d0
+```
+CUDA_VISIBLE_DEVICES=0 PYTORCH_JIT=0 python3 train.py --load-model false --batch-size 12 --num-epochs 130 --num-workers 8 --eval-every 10 --h5py-dataset false
+```
+
+Faster-RCNN
+```
+CUDA_VISIBLE_DEVICES=0,1 PYTORCH_JIT=0 python3 train.py --load-model false --batch-size 24 --num-epochs 130 --num-workers 6 --eval-every 10 --h5py-dataset false --model-name faster
 ```
 
 

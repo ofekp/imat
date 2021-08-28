@@ -17,7 +17,6 @@ from memory_profiler import profile
 font = bbx.get_font_with_size(10)
 
 
-@profile
 class Visualize:
     def __init__(self, main_folder_path, categories_df, target_dim, dest_folder=None):
         self.main_folder_path = main_folder_path

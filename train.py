@@ -29,6 +29,11 @@ import subprocess
 import sys
 from memory_profiler import profile
 import functools
+import socket
+import torch.distributed as dist
+import torch.multiprocessing as mp
+from torch.nn.parallel import DistributedDataParallel as DDP
+
 print = functools.partial(print, flush=True)
 
 is_colab = False
@@ -153,7 +158,7 @@ def run_os(cmd_as_list):
 
 
 def print_nvidia_smi(device):
-    if device == 'cuda:0':
+    if device != 'cpu':
         stderr, _ = run_os(['nvidia-smi', '--query-gpu=memory.used,memory.free,memory.total', '--format=csv'])
         print(stderr)
 
@@ -218,6 +223,10 @@ def process_data(main_folder_path, data_limit):
 def process_data_coco(main_folder_path, data_limit):
     train_annot_path = main_folder_path + '/Data/annotations/instances_train2017.json'
     val_annot_path = main_folder_path + '/Data/annotations/instances_val2017.json'
+    if socket.gethostname() == "deep3d":
+        print("Running on Deep3D")
+        train_annot_path = '/data/dataset/COCO_2017/annotations/instances_train2017.json'
+        val_annot_path = '/data/dataset/COCO_2017/annotations/instances_val2017.json'
     coco_train = COCO(train_annot_path)
     coco_val = COCO(val_annot_path)
     # Load the categories in a variable
@@ -268,7 +277,7 @@ def freeze_bn(model):
     model.apply(set_bn_eval)
     
 
-def get_model_instance_segmentation(num_classes):
+def get_model_instance_segmentation(num_classes, rank):
     """
     This is the conventional model which is based on Faster R-CNN
     Note that to use this model you must install regular pytorch package (instead of from ofekp branch)
@@ -281,10 +290,10 @@ def get_model_instance_segmentation(num_classes):
         pip install git+https://github.com/ofekp/vision.git
 
     UPDATE 2021, to use this execute:
-        pip uninstall torch
-        pip uninstall torchvision
-        pip install torch
-        pip install torchvision
+        pip3 uninstall torch
+        pip3 uninstall torchvision
+        pip3 install torch
+        pip3 install torchvision
         this will give torch 1.9.0, and vision of 0.10.0 which are compatible based on the table in
         https://github.com/pytorch/vision
     """
@@ -302,6 +311,13 @@ def get_model_instance_segmentation(num_classes):
     hidden_layer = 256
     # and replace the mask predictor with a new one
     model.roi_heads.mask_predictor = MaskRCNNPredictor(in_features_mask, hidden_layer, num_classes)
+
+    if torch.cuda.device_count() > 1:
+        print("Found rank [{}]".format(rank))
+        print_nvidia_smi(rank)
+        model.to(rank)
+        model = DDP(model, device_ids=[rank])
+
     return model
 
 
@@ -347,7 +363,7 @@ class BackboneWithCustomFPN(nn.Module):
         return x
 
 
-def get_model_instance_segmentation_efficientnet(model_name, num_classes, target_dim, freeze_batch_norm=False):
+def get_model_instance_segmentation_efficientnet(model_name, num_classes, target_dim, rank, freeze_batch_norm=False):
     print("Using EffDet detection model")
     
     roi_pooler = torchvision.ops.MultiScaleRoIAlign(featmap_names=[0],
@@ -388,15 +404,22 @@ def get_model_instance_segmentation_efficientnet(model_name, num_classes, target
         print("Freezing batch normalization weights")
         freeze_bn(model.backbone)
 
+    if torch.cuda.device_count() > 1:
+        print("Let's use", torch.cuda.device_count(), "GPUs!")
+        # dim = 0 [30, xxx] -> [10, ...], [10, ...], [10, ...] on 3 GPUs
+        model = nn.DataParallel(model)
+
     return model
 
 
 class Trainer:
     
-    def __init__(self, main_folder_path, model, train_df, test_df, data_limit, num_classes, target_dim, categories_df, device, is_colab, config):
+    def __init__(self, main_folder_path, model, train_df, test_df, data_limit, num_classes, target_dim, categories_df, device, is_colab, rank, world_size, config):
         self.main_folder_path = main_folder_path
         self.model = model
         self.train_df = train_df
+        self.rank = rank
+        self.world_size = world_size
         self.test_df = test_df
         self.device = device
         self.config = config
@@ -418,10 +441,16 @@ class Trainer:
         self.log("Memory usage before initializing the datasets [{}]".format(get_memory_usage()))
         # use our dataset and defined transformations
         if self.config.coco_dataset:
-            self.dataset = coco_dataset.COCODataset(self.train_df, True, self.config.model_name, self.main_folder_path, self.target_dim, self.num_classes,
-                                                    T.get_transform(train=True), False)
-            self.dataset_test = coco_dataset.COCODataset(self.test_df, False, self.config.model_name, self.main_folder_path, self.target_dim, self.num_classes,
-                                                         T.get_transform(train=False), False)
+            if self.config.h5py_dataset:
+                h5_reader = imat_dataset.DatasetH5Reader("/data/dataset/COCO_2017_H5PY/coco_" + str(self.target_dim) + ".hdf5")
+                self.dataset = imat_dataset.IMATDatasetH5PY(h5_reader, self.num_classes, self.target_dim, self.config.model_name, T.get_transform(train=True))
+                h5_reader_test = imat_dataset.DatasetH5Reader("/data/dataset/COCO_2017_H5PY/coco_test_" + str(self.target_dim) + ".hdf5")
+                self.dataset_test = imat_dataset.IMATDatasetH5PY(h5_reader_test, self.num_classes, self.target_dim, self.config.model_name, T.get_transform(train=False))
+            else:
+                self.dataset = coco_dataset.COCODataset(self.train_df, True, self.config.model_name, self.main_folder_path, self.target_dim, self.num_classes,
+                                                        T.get_transform(train=True), False)
+                self.dataset_test = coco_dataset.COCODataset(self.test_df, False, self.config.model_name, self.main_folder_path, self.target_dim, self.num_classes,
+                                                            T.get_transform(train=False), False)
         else:
             if self.config.h5py_dataset:
                 h5_reader = imat_dataset.DatasetH5Reader("../imaterialist_" + str(self.target_dim) + ".hdf5")
@@ -506,7 +535,6 @@ class Trainer:
         print_nvidia_smi(self.device)
         self.dataset.show_stats()
 
-    @profile
     def eval_model(self, data_loader_test):
         print("Memory usage before starting eval [{}]".format(psutil.virtual_memory().percent), flush=True)
         self.model.eval()
@@ -529,15 +557,33 @@ class Trainer:
 
     def train(self):
         # define training and validation data loaders
+        train_sampler = None
+        test_sampler = None
+        train_shuffle = True
+        if torch.cuda.device_count() > 1:
+            train_sampler = torch.utils.data.distributed.DistributedSampler(
+                self.dataset,
+                num_replicas=self.world_size,
+                rank=self.rank
+            )
+
+            test_sampler = torch.utils.data.distributed.DistributedSampler(
+                self.dataset_test,
+                num_replicas=self.world_size,
+                rank=self.rank
+            )
+
+            train_shuffle = False
+
         data_loader = torch.utils.data.DataLoader(
-            self.dataset, batch_size=self.config.batch_size, shuffle=True, num_workers=self.config.num_workers,
-            collate_fn=utils.collate_fn)
+            self.dataset, batch_size=self.config.batch_size, shuffle=train_shuffle, num_workers=self.config.num_workers,
+            collate_fn=utils.collate_fn, pin_memory=True, sampler=train_sampler)
 
         data_loader_test = torch.utils.data.DataLoader(
             self.dataset_test, batch_size=self.config.batch_size, shuffle=False, num_workers=self.config.num_workers,
-            collate_fn=utils.collate_fn)
+            collate_fn=utils.collate_fn, pin_memory=True, sampler=test_sampler)
 
-        self.eval_model(data_loader_test)  # TODO: remove this line
+        # self.eval_model(data_loader_test)  # TODO: remove this line
 
         for _ in range(self.config.num_epochs):
             # train one epoch
@@ -640,7 +686,11 @@ def get_memory_usage():
     return psutil.virtual_memory().percent
 
 
-def main():
+def run(rank, world_size):
+    os.environ['MASTER_ADDR'] = 'localhost'
+    os.environ['MASTER_PORT'] = '12355'
+    if torch.cuda.device_count() > 1:
+        dist.init_process_group("gloo", rank=rank, world_size=world_size)
     args, args_text = parse_args()
 
     print("Memory usage on start [{}]".format(get_memory_usage()))
@@ -665,12 +715,15 @@ def main():
     # prepare a log file
     now = datetime.now() # current date and time
     date_str = now.strftime("%Y%m%d%H%M")
-    log_file_path = "./Log/" + date_str + ".log"
+    if torch.cuda.device_count() > 1:
+        log_file_path = "./Log/" + date_str + "_rank_" + str(rank) + ".log"
+    else:
+        log_file_path = "./Log/" + date_str + ".log"
     log_file = open(log_file_path, "a")
     old_stdout = sys.stdout
     old_stderr = sys.stderr
-    # sys.stdout = log_file
-    # sys.stderr = log_file
+    sys.stdout = log_file
+    sys.stderr = log_file
 
     # device = torch.device('cuda') if torch.cuda.is_available() else torch.device('cpu')
     isTPU = False
@@ -679,15 +732,19 @@ def main():
         device = xm.xla_device()
     elif forceCPU:
         device = 'cpu'
+    elif torch.cuda.device_count() > 1:
+        device = rank   
     else:
         device = 'cuda:0' if torch.cuda.is_available() else 'cpu'
+        
     print("Device type [{}]".format(device))
-    if device == 'cuda:0':
-        print("Device description [{}]".format(torch.cuda.get_device_name(0)))
+    if device != 'cpu':
+        print("Device description [{}]".format(torch.cuda.get_device_name(rank)))
 
     print("Memory usage before data processing [{}]".format(get_memory_usage()))
 
     if args.coco_dataset:
+        # currently data limit has no effect here on coco dataset
         num_classes, train_df, test_df, categories_df = process_data_coco(main_folder_path, args.data_limit)
     else:
         num_classes, train_df, test_df, categories_df = process_data(main_folder_path, args.data_limit)
@@ -697,15 +754,15 @@ def main():
 
     if "faster" in args.model_name:
         # special case of training the conventional model based on Faster R-CNN
-        model = get_model_instance_segmentation(num_classes)
+        model = get_model_instance_segmentation(num_classes, device)
     else:
-        model = get_model_instance_segmentation_efficientnet(args.model_name, num_classes, args.target_dim, freeze_batch_norm=args.freeze_batch_norm_weights)
+        model = get_model_instance_segmentation_efficientnet(args.model_name, num_classes, args.target_dim, device, freeze_batch_norm=args.freeze_batch_norm_weights)
 
     print("Memory usage after initializing the model [{}]".format(get_memory_usage()))
 
     # get the model using our helper function
     train_config = TrainConfig(args)
-    trainer = Trainer(main_folder_path, model, train_df, test_df, args.data_limit, num_classes, args.target_dim, categories_df, device, is_colab, config=train_config)
+    trainer = Trainer(main_folder_path, model, train_df, test_df, args.data_limit, num_classes, args.target_dim, categories_df, device, is_colab, rank, world_size, config=train_config)
 
     # load a saved model
     if args.load_model:
@@ -713,14 +770,30 @@ def main():
             exit(1)
 
     if args.train:
-        print_nvidia_smi(device)
-        model.to(device)
+        if not torch.cuda.device_count() > 1:
+            print_nvidia_smi(device)
+            model.to(device)
         print_nvidia_smi(device)
         trainer.train()
 
     sys.stdout = old_stdout
     sys.stderr = old_stderr
     log_file.close()
+
+
+def main():
+    if torch.cuda.device_count() > 1:
+        try:
+            print("This should only be printed once!")
+            world_size = 2
+            mp.spawn(run,
+                args=(world_size,),
+                nprocs=world_size,
+                join=True)
+        finally:
+            dist.destroy_process_group()
+    else:
+        run(None, None)
 
 
 if __name__ == '__main__':
